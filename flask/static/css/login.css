@@ -1,0 +1,60 @@
+html, body, .container {
+    height: 100%;
+}
+
+body {
+    background-color: #232428;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.icon {
+    color: white;
+    width: 8rem;
+    height: 8rem;
+}
+
+.discord-icon {
+    height: 50%;
+    margin-right: 0.5rem;
+}
+
+.title {
+    color: white;
+    font-weight: 650;
+    font-size: 2rem;
+}
+
+button {
+    display: flex;
+    background-color: #2B2D31;
+    border: 0;
+    cursor: pointer;
+    color: white;
+    margin-top: 2rem;
+    font-weight: 550;
+    font-size: 1.2rem;
+    width: 16rem;
+    height: 3rem;
+    line-height: 3rem;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-radius: 12px;
+}
+
+button:hover {
+    background-color: #313338;
+}

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>스톤봇</title>
+
+        <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+
+        <style>
+            html, body, .container {
+                height: 100%;
+            }
+
+            body {
+                background-color: #232428;
+                font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+
+            .container {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+            }
+
+            .icon {
+                color: white;
+                width: 8rem;
+                height: 8rem;
+            }
+
+            .title {
+                color: white;
+                font-weight: 650;
+                font-size: 2rem;
+            }
+
+            .description {
+                color: gray;
+                font-weight: 450;
+                font-size: 1rem;
+            }
+
+            button {
+                background-color: #2B2D31;
+                border: 0;
+                cursor: pointer;
+                color: white;
+                margin-top: 2rem;
+                font-weight: 550;
+                font-size: 1.2rem;
+                height: 3rem;
+                width: 16rem;
+                border-radius: 12px;
+            }
+
+            button:hover {
+                background-color: #313338;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd" />
+            </svg>
+
+            <span class="title">{{ title or "알 수 없는 오류" }}</span>
+            <span class="description">{{ description or "메인 페이지로 돌아가 다시 시도해주세요." }}</span>
+
+            <button onclick="history.back();">이전 페이지로 돌아가기</button>
+        </div>
+    </body>
+</html>

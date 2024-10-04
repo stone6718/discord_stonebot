@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>스톤 관리자 패널</title>
+
+        <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+        <link rel="stylesheet" href="../static/css/manage.css" />
+
+        <script>
+            async function logout() {
+                await fetch("/logout", { method: "POST" });
+                document.location = "/login";
+            }
+
+            function manageGuild(guildId) {
+                document.location = `/guild/${guildId}/users`;
+            }
+        </script>
+    </head>
+
+    <body>
+        <header>
+            <img class="icon" src="../static/home1.jpg">
+
+            <div class="account-container">
+                <img class="account-avatar" src="https://cdn.discordapp.com/avatars/{{ user_id }}/{{ avatar }}.png">
+                <span class="account">{{ display_name }}</span>
+                <button class="logout-button" onclick="logout()">로그아웃</button>
+            </div>
+        </header>
+
+        {% if guilds|length == 0 %}
+            <span class="no-guilds">관리할 수 있는 서버가 없습니다!</span>
+        {% else %}
+            <div class="container">
+                {% for guild in guilds %}
+                <div class="card" onclick="manageGuild('{{ guild.id }}')">
+                    {% if guild.icon %}
+                        <img class="guild-icon" src="{{ guild.icon.url }}">
+                    {% else %}
+                        <svg class="guild-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.5 9.75a6 6 0 0 1 11.573-2.226 3.75 3.75 0 0 1 4.133 4.303A4.5 4.5 0 0 1 18 20.25H6.75a5.25 5.25 0 0 1-2.23-10.004 6.072 6.072 0 0 1-.02-.496Z" clip-rule="evenodd" />
+                        </svg>
+                    {% endif %}
+
+                    <span class="guild-name">{{ guild.name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </body>
+</html>
