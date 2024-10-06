@@ -1379,10 +1379,14 @@ async def money_edit(ctx, user: str = commands.Param(name="유저"), choice: str
     if ctx.author.id == developer:
         # 멘션 또는 ID에서 사용자 ID 추출
         try:
-            if user.startswith('<@') and user.endswith('>'):  # 멘션 형식
+            user_id = None
+            
+            # 멘션 형식 처리
+            if user.startswith('<@') and user.endswith('>'):
                 user_id = int(user[3:-1]) if user[2] == '!' else int(user[2:-1])  # <@!123456789> 또는 <@123456789>
-            else:  # ID 형식
-                user_id = int(user)
+            else:
+                user_id = int(user)  # ID 형식
+
             user_obj = ctx.guild.get_member(user_id)
             if user_obj is None:
                 raise ValueError("사용자를 찾을 수 없습니다.")
@@ -1392,6 +1396,7 @@ async def money_edit(ctx, user: str = commands.Param(name="유저"), choice: str
             await ctx.send(embed=embed, ephemeral=True)
             return
 
+        # 돈 차감 또는 추가
         if choice == "차감":
             if not await removemoney(user_obj.id, money):
                 return await ctx.send("그 사용자의 포인트를 마이너스로 줄 수 없어요!")
@@ -1668,20 +1673,7 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
             embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.")
             await ctx.send(embed=embed)
 
-db_path = os.path.join('system_database', 'baccarat.db')
-
-# 플레이어, 뱅커, 무승부 승리 데이터를 저장하는 함수
-async def update_victory_data(winner):
-    async with aiosqlite.connect(db_path) as db:
-        if winner == "플레이어":
-            await db.execute('UPDATE baccarat_results SET player_wins = player_wins + 1')
-        elif winner == "뱅커":
-            await db.execute('UPDATE baccarat_results SET banker_wins = banker_wins + 1')
-        elif winner == "무승부":
-            await db.execute('UPDATE baccarat_results SET tie_wins = tie_wins + 1')
-        await db.commit()
-
-# 카드 점수 계산을 위한 함수 정의
+# 카드 점수 계산 함수
 def get_card_value(card):
     shape_score = {
         'A': 1,
@@ -1698,8 +1690,7 @@ def get_card_value(card):
         '9': 9,
         '10': 0
     }
-    card_value = card[:-1]  # 카드의 숫자만 추출
-    return shape_score.get(card_value, 0)  # 기본값 0 반환
+    return shape_score.get(card, 0)
 
 @bot.slash_command(name="도박_바카라", description="보유금액으로 도박을 합니다.")
 async def betting_card(ctx, money: int = commands.Param(name="금액"), method: str = commands.Param(name="배팅", choices=["플레이어", "무승부", "뱅커"])):
@@ -1713,7 +1704,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
 
     user = ctx.author
     current_money = await getmoney(user.id)  # 현재 보유 금액 조회
-    
+
     # 배팅 금액이 음수이거나 0일 경우 오류 메시지 전송
     if money <= 0:
         embed = disnake.Embed(color=embederrorcolor)
@@ -1730,18 +1721,28 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     await ctx.response.defer()
 
     # 카드 랜덤 생성
-    def draw_card():
+    def random_card():
         card = random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
-        shape = random.choice(['♠️', '♣️', '♥️', '♦️'])
-        return card, shape  # 카드와 모양을 튜플로 반환
+        return card  # 카드 값 리턴
 
-    mix_p1, shape_p1 = draw_card()
-    mix_p2, shape_p2 = draw_card()
-    mix_p3, shape_p3 = draw_card()
-    mix_b1, shape_b1 = draw_card()
-    mix_b2, shape_b2 = draw_card()
-    mix_b3, shape_b3 = draw_card()
-    add_card = 'x'
+    def random_shape():
+        shape = random.choice(['♠️', '♣️', '♥️', '♦️'])
+        return shape # 모양 값 리턴
+
+    mix_p1 = random_card()
+    mix_p2 = random_card()
+    mix_p3 = random_card()
+    mix_b1 = random_card()
+    mix_b2 = random_card()
+    mix_b3 = random_card()
+
+    shape_p1 = random_shape()
+    shape_p2 = random_shape()
+    shape_p3 = random_shape()
+
+    shape_b1 = random_shape()
+    shape_b2 = random_shape()
+    shape_b3 = random_shape()
 
     # 점수 계산
     score_calculate_p = (get_card_value(mix_p1) + get_card_value(mix_p2)) % 10
@@ -1749,25 +1750,34 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
 
     # 플레이어 추가 카드 규칙 적용
     if score_calculate_p <= 6:
-        mix_p3, shape_p3 = draw_card()
+        mix_p3 = random_card()
         score_calculate_p = (get_card_value(mix_p1) + get_card_value(mix_p2) + get_card_value(mix_p3)) % 10
         add_card_p = True
     else:
         add_card_p = False
 
     # 뱅커의 추가 카드 규칙 적용
-    if score_calculate_b <= 2 or (score_calculate_b == 3 and score_calculate_p != 8) or (score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (score_calculate_b == 6 and score_calculate_p in [6, 7]):
-        mix_b3, shape_b3 = draw_card()
+    if score_calculate_b <= 2 or (
+        score_calculate_b == 3 and score_calculate_p != 8) or (
+            score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (
+                score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (
+                    score_calculate_b == 6 and score_calculate_p in [6, 7]):
+        mix_b3 = random_card()
         score_calculate_b = (get_card_value(mix_b1) + get_card_value(mix_b2) + get_card_value(mix_b3)) % 10
         add_card_b = True
     else:
         add_card_b = False
 
+
     # 승자 결정
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
 
     # 승리 데이터 업데이트
-    await update_victory_data(winner)
+    db_path = os.path.join('system_database', 'baccarat.db')
+
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute('INSERT INTO winner (winner) VALUES (?)', (winner,))
+        await db.commit()
 
     # 배팅 결과 처리
     embed = disnake.Embed(color=embedsuccess if winner == method else embederrorcolor)
@@ -4073,7 +4083,7 @@ async def on_message(message):
                 print(f"이모지 반응 중 오류 발생: {e}")
 
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.\nstone6718 DM으로 문의주세요.")
+            embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.\n@stone6718 DM으로 문의주세요.")
             await message.channel.send(embed=embed)
             return
         else:

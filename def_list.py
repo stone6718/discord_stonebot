@@ -952,16 +952,17 @@ async def dm_on_off(user):
             await aiocursor.execute("SELECT dm_on_off FROM user WHERE id=?", (user_id,))
             dbdata = await aiocursor.fetchone()
 
-            if dbdata is None:
+            if dbdata is None or len(dbdata) < 1 or dbdata[0] is None:
                 print(f"사용자 {user_id}의 DM 설정을 찾을 수 없습니다.")
-                return  # 사용자 데이터가 없으면 종료
+                return 0  # 기본값으로 0을 반환
 
-            # dbdata의 길이를 확인하고 인덱스 접근
-            if len(dbdata) < 1:
-                print(f"사용자 {user_id}의 DM 설정이 비어 있습니다.")
-                return  # DM 설정이 비어있으면 종료
+            # dbdata[0]이 None이 아닐 때만 int로 변환
+            try:
+                dm_on_off = int(dbdata[0])  # 0번 인덱스에서 DM 설정 가져오기
+            except ValueError:
+                print(f"사용자 {user_id}의 DM 설정이 정수로 변환할 수 없습니다.")
+                return 0  # 변환 실패 시 기본값으로 0을 반환
 
-            dm_on_off = int(dbdata[0])  # 0번 인덱스에서 DM 설정 가져오기
             return dm_on_off  # DM 설정 값을 반환
 
 async def member_status(ctx):
