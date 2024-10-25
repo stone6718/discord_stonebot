@@ -1,11 +1,9 @@
-import security as sec, json, requests, bs4, re, pytz, io
+import security as sec, json, requests, bs4, re, pytz
 import asyncio, disnake, aiosqlite, platform, math, cpuinfo, tempfile
 import os, random, time, string, datetime, psutil, coolsms_kakao, websocket
-import numpy as np
 from gtts import gTTS
 from def_list import *
 import yt_dlp as youtube_dl
-import matplotlib.pyplot as plt
 from googletrans import Translator
 from disnake import FFmpegPCMAudio
 from collections import defaultdict
@@ -177,6 +175,13 @@ region_codes = {
 async def meal(ctx: disnake.CommandInteraction, 지역=commands.Param(name="지역", description="학교가 위치한 지역을 골라주세요.", choices=list(region_codes.keys())), 학교명: str=commands.Param(name="학교명", description="학교명을 ~~학교 까지 입력해주세요."), 날짜: str=commands.Param(name="날짜", description="YYYYMMDD  8자를 입력해주세요.", default=None)):
     if not await check_permissions(ctx):
         return
+    
+    # 학교명 수정
+    if 학교명.endswith('초') or 학교명.endswith('고'):
+        학교명 += '등학교'
+    elif 학교명.endswith('중'):
+        학교명 += '학교'
+    
     # 지역 코드 설정
     edu_office_code = region_codes[지역]
     date = 날짜 if 날짜 else datetime.now().strftime('%Y%m%d')
@@ -967,9 +972,12 @@ async def resume(ctx):
 
 # 플레이리스트 생성 제한 설정
 MAX_PLAYLISTS = {
-    0 : 3,
-    1 : 10,
-    2 : 30
+    0 : 5,
+    1 : 20,
+    2 : 30,
+    3 : 50,
+    4 : 80,
+    5 : 100
 }
 
 @bot.slash_command(name='플레이리스트', description='플레이리스트를 확인합니다.')
@@ -1021,8 +1029,14 @@ async def add_to_playlist(ctx, playlist_name: str, song: str):
                 if user_class == 0:
                     user_class_text = "비회원"
                 elif user_class == 1:
-                    user_class_text = "회원"
+                    user_class_text = "브론즈_회원"
                 elif user_class == 2:
+                    user_class_text = "실버_회원"
+                elif user_class == 3:
+                    user_class_text = "다이아_회원"
+                elif user_class == 4:
+                    user_class_text = "레전드_회원"
+                elif user_class == 5:
                     user_class_text = "개발자"
                 else:
                     print("플레이리스트 오류")
@@ -1530,10 +1544,13 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
         embed.add_field(name="❌ 오류", value="받는사람이 미가입상태이므로 송금할수없습니다.")
         await ctx.send(embed=embed, ephemeral=True)
         await exit()
-    if money < 0:
+
+    if money < 1:
         embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="송금 금액은 음수가 될 수 없습니다.")
+        embed.add_field(name="❌ 오류", value="송금 금액은 1원이상부터 가능합니다.")
         await ctx.send(embed=embed, ephemeral=True)
+        return
+    
     send_user = ctx.author
     send_user_money = await getmoney(send_user.id)
     if send_user_money < money:
@@ -1625,9 +1642,9 @@ async def betting(ctx, money: int = commands.Param(name="금액"), betting_metho
     if betting_method == "도박 (확률 30%, 2배, 실패시 -1배)":
         await handle_bet(ctx, user, money, success_rate=30, win_multiplier=2, lose_multiplier=1, lose_exp_divisor=1200)
     elif betting_method == "도박2 (확률 50%, 1.5배, 실패시 -0.75배)":
-        await handle_bet(ctx, user, money, success_rate=50, win_multiplier=1.5, lose_multiplier=0.75, lose_exp_divisor=1200)
+        await handle_bet(ctx, user, money, success_rate=50, win_multiplier=0.5, lose_multiplier=0.75, lose_exp_divisor=1200)
 
-@bot.slash_command(name="숫자도박", description="보유금액으로 도박을 합니다. (숫자맞추기 1~4, 확률 25%, 최대 3배, 실패시 -1.5배)")
+@bot.slash_command(name="숫자도박", description="보유금액으로 도박을 합니다. (숫자맞추기 1~4, 확률 25%, 최대 3배, 실패시 -2배)")
 async def betting_number(ctx, number: int = commands.Param(name="숫자"), money: int = commands.Param(name="금액")):
     if not await check_permissions(ctx):
         return
@@ -1644,7 +1661,7 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
         await ctx.send(embed=embed, ephemeral=True)
         return
 
-    if round(money * 1.5) > current_money:
+    if round(money * 2) > current_money:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="가진금액보다 배팅금이 많습니다.")
         await ctx.send(embed=embed, ephemeral=True)
@@ -1665,11 +1682,11 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
             embed.add_field(name="성공", value=f"{money:,}원을 얻었습니다.")
             await ctx.send(embed=embed)
         else:
-            await removemoney(user.id, round(money * 1.5))
-            await add_lose_money(user.id, round(money * 1.5))
-            await add_exp(user.id, round((money * 1.5) / 1200))
+            await removemoney(user.id, round(money * 2))
+            await add_lose_money(user.id, round(money * 2))
+            await add_exp(user.id, round((money * 2) / 1200))
             embed = disnake.Embed(color=embederrorcolor)
-            money = round(money * 1.5)
+            money = round(money * 2)
             embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.")
             await ctx.send(embed=embed)
 
@@ -1697,6 +1714,8 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     if not await check_permissions(ctx):
         return
 
+    await ctx.response.defer()  # 응답을 지연시키기 위해 defer 호출
+
     await command_use_log(ctx, "도박_바카라")
     
     if not await member_status(ctx):
@@ -1705,7 +1724,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     user = ctx.author
     current_money = await getmoney(user.id)  # 현재 보유 금액 조회
 
-    # 배팅 금액이 음수이거나 0일 경우 오류 메시지 전송
+    # 배팅 금액 검증
     if money <= 0:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="배팅 금액은 1원 이상이어야 합니다.")
@@ -1714,67 +1733,50 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
 
     if money > current_money:
         embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="가진금액보다 배팅금이 많습니다.")
+        embed.add_field(name="❌ 오류", value="가진 금액보다 배팅 금액이 많습니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
 
-    await ctx.response.defer()
-
-    # 카드 랜덤 생성
+    # 카드 랜덤 생성 함수
     def random_card():
-        card = random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
-        return card  # 카드 값 리턴
+        return random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
 
     def random_shape():
-        shape = random.choice(['♠️', '♣️', '♥️', '♦️'])
-        return shape # 모양 값 리턴
+        return random.choice(['♠️', '♣️', '♥️', '♦️'])
 
-    mix_p1 = random_card()
-    mix_p2 = random_card()
-    mix_p3 = random_card()
-    mix_b1 = random_card()
-    mix_b2 = random_card()
-    mix_b3 = random_card()
-
-    shape_p1 = random_shape()
-    shape_p2 = random_shape()
-    shape_p3 = random_shape()
-
-    shape_b1 = random_shape()
-    shape_b2 = random_shape()
-    shape_b3 = random_shape()
+    # 카드와 모양 랜덤 생성
+    mix_p = [random_card() for _ in range(3)]
+    mix_b = [random_card() for _ in range(3)]
+    shape_p = [random_shape() for _ in range(3)]
+    shape_b = [random_shape() for _ in range(3)]
 
     # 점수 계산
-    score_calculate_p = (get_card_value(mix_p1) + get_card_value(mix_p2)) % 10
-    score_calculate_b = (get_card_value(mix_b1) + get_card_value(mix_b2)) % 10
+    score_calculate_p = (get_card_value(mix_p[0]) + get_card_value(mix_p[1])) % 10
+    score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1])) % 10
 
     # 플레이어 추가 카드 규칙 적용
+    add_card_p = False
     if score_calculate_p <= 6:
-        mix_p3 = random_card()
-        score_calculate_p = (get_card_value(mix_p1) + get_card_value(mix_p2) + get_card_value(mix_p3)) % 10
+        mix_p[2] = random_card()
+        score_calculate_p = (get_card_value(mix_p[0]) + get_card_value(mix_p[1]) + get_card_value(mix_p[2])) % 10
         add_card_p = True
-    else:
-        add_card_p = False
 
     # 뱅커의 추가 카드 규칙 적용
+    add_card_b = False
     if score_calculate_b <= 2 or (
         score_calculate_b == 3 and score_calculate_p != 8) or (
-            score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (
-                score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (
-                    score_calculate_b == 6 and score_calculate_p in [6, 7]):
-        mix_b3 = random_card()
-        score_calculate_b = (get_card_value(mix_b1) + get_card_value(mix_b2) + get_card_value(mix_b3)) % 10
+        score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (
+        score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (
+        score_calculate_b == 6 and score_calculate_p in [6, 7]):
+        mix_b[2] = random_card()
+        score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1]) + get_card_value(mix_b[2])) % 10
         add_card_b = True
-    else:
-        add_card_b = False
-
 
     # 승자 결정
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
 
     # 승리 데이터 업데이트
     db_path = os.path.join('system_database', 'baccarat.db')
-
     async with aiosqlite.connect(db_path) as db:
         await db.execute('INSERT INTO winner (winner) VALUES (?)', (winner,))
         await db.commit()
@@ -1783,38 +1785,41 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     embed = disnake.Embed(color=embedsuccess if winner == method else embederrorcolor)
 
     if winner == method:  # win
-        win_money = money * (2 if winner == "플레이어" else 1.95 if winner == "뱅커" else 8 if winner == "무승부" else 0)
+        win_money = money * (2 if winner == "플레이어" else 1.95)
         await addmoney(user.id, win_money - money)
+        await add_exp(user.id, round((money * 2) / 600))
         embed.add_field(name="성공", value=f"{win_money:,}원을 얻었습니다.", inline=False)
     else:  # lose
         if winner == "무승부":
             embed.add_field(name="무승부", value="배팅 금액이 유지됩니다.", inline=False)
         else:
             await removemoney(user.id, money)
+            await add_lose_money(user.id, money)
+            await add_exp(user.id, round(money / 1200))
             embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.", inline=False)
 
     # 카드 결과 출력
     embed.add_field(name="결과", value=f"배팅 : {method}\n배팅금액 : {money:,}원\n승리 : {winner}!", inline=False)
 
     # 추가 카드 결과 표시
-    if add_card_p and add_card_b:
-        embed.add_field(name="카드 결과", value=f"플레이어 : {mix_p1}{shape_p1}, {mix_p2}{shape_p2}, {mix_p3}{shape_p3}, {score_calculate_p}\n뱅ㅤㅤ커 : {mix_b1}{shape_b1}, {mix_b2}{shape_b2}, {mix_b3}{shape_b3}, {score_calculate_b}")
-    elif add_card_p:
-        embed.add_field(name="카드 결과", value=f"플레이어 : {mix_p1}{shape_p1}, {mix_p2}{shape_p2}, {mix_p3}{shape_p3}, {score_calculate_p}\n뱅ㅤㅤ커 : {mix_b1}{shape_b1}, {mix_b2}{shape_b2}, {score_calculate_b}")
-    elif add_card_b:
-        embed.add_field(name="카드 결과", value=f"플레이어 : {mix_p1}{shape_p1}, {mix_p2}{shape_p2}, {score_calculate_p}\n뱅ㅤㅤ커 : {mix_b1}{shape_b1}, {mix_b2}{shape_b2}, {mix_b3}{shape_b3}, {score_calculate_b}")
-    else:
-        embed.add_field(name="카드 결과", value=f"플레이어 : {mix_p1}{shape_p1}, {mix_p2}{shape_p2}, {score_calculate_p}\n뱅ㅤㅤ커 : {mix_b1}{shape_b1}, {mix_b2}{shape_b2}, {score_calculate_b}")
+    card_results = f"플레이어 : {', '.join([f'{mix_p[i]}{shape_p[i]}' for i in range(3)])}, {score_calculate_p}\n"
+    card_results += f"뱅커 : {', '.join([f'{mix_b[i]}{shape_b[i]}' for i in range(3)])}, {score_calculate_b}"
+    embed.add_field(name="카드 결과", value=card_results)
 
     await ctx.send(embed=embed)
 
-@bot.slash_command(name="복권구매", description="복권을 구매합니다.")
+@bot.slash_command(name="로또구매", description="로또을 구매합니다.")
 async def purchase_lottery(interaction: disnake.ApplicationCommandInteraction, auto: bool = False, count: int = 1, numbers: str = None):
     user_id = interaction.author.id
 
     # 최대 구매 개수 제한
     if count > 100:
-        await interaction.send("최대 100개까지 복권을 구매할 수 있습니다.")
+        await interaction.send("최대 100개까지 로또을 구매할 수 있습니다.")
+        return
+
+    # 로또 음수제한
+    if count < 1:
+        await interaction.send("로또는 1개이상만 구매할수 있습니다.")
         return
 
     # 사용자의 잔액을 가져옵니다.
@@ -1822,7 +1827,7 @@ async def purchase_lottery(interaction: disnake.ApplicationCommandInteraction, a
     
     total_cost = count * 10000  # 총 비용 계산
     if get_money < total_cost:
-        await interaction.send("잔액이 부족하여 복권을 구매할 수 없습니다.")
+        await interaction.send("잔액이 부족하여 로또을 구매할 수 없습니다.")
         return
 
     # 잔액 차감
@@ -2121,11 +2126,17 @@ async def check_membership_status(ctx: disnake.CommandInteraction):
         if member_class == 0:
             status = "비회원"
         elif member_class == 1:
-            status = "회원"
+            status = "브론즈_회원"
         elif member_class == 2:
+            status = "실버_회원"
+        elif member_class == 3:
+            status = "다이아_회원"
+        elif member_class == 4:
+            status = "레전드_회원"
+        elif member_class == 5:
             status = "개발자"
         else:
-            print("error : 데이터값이 0, 1, 2가 아닙니다.")
+            print("error : 데이터값이 0, 1, 2, 3, 4, 5가 아닙니다.")
 
         embed = disnake.Embed(color=0x00ff00)
         embed.add_field(name=f"{ctx.author.name}님의 멤버십 📋", value=f"상태: {status}\n만료일: {expiration_date}\n💰 크레딧: {credits}")
@@ -2322,7 +2333,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     end_battle_button = disnake.ui.Button(label="전투 종료", style=disnake.ButtonStyle.danger)
 
     # 버튼 뷰 생성
-    view = disnake.ui.View()
+    view = disnake.ui.View(timeout=None)  # 뷰의 타임아웃을 설정하지 않음
     view.add_item(attack_button)
     view.add_item(end_battle_button)
 
@@ -2330,6 +2341,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     message = await ctx.send(embed=embed, view=view)
 
     async def attack_callback(interaction):
+        await interaction.response.defer()  # 응답 지연
         nonlocal monster_hp
 
         # 몬스터 도망 확률 체크
@@ -2348,7 +2360,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(color=0x00ff00)
                 embed.add_field(name="✅ 방어 성공", value=f"{sword_name}이(가) 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
-                await interaction.followup.edit_message(embed=embed, view=None)
+                await interaction.followup.edit_message(embed=embed, view=view)
                 return
             else:
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
@@ -2363,7 +2375,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         if monster_hp > 0:
             embed = disnake.Embed(title="몬스터와의 전투!", color=0x00ff00)
             embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
-            await interaction.followup.edit_message(embed=embed)
+            await interaction.followup.edit_message(embed=embed, view=view)
         else:
             reward = monsters[monster_name]["reward"]
             await add_cash_item_count(user_id, reward)
@@ -2372,6 +2384,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
             await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
 
     async def end_battle_callback(interaction):
+        await interaction.response.defer()  # 응답 지연
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="⚔️ 전투 종료", value="전투가 종료되었습니다.")
         await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
@@ -2886,6 +2899,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="코인목록", description="상장된 가상화폐를 확인합니다.")
 async def coin_list(ctx):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코인목록")
@@ -2997,6 +3011,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="코인지갑", description="보유중인 가상화폐를 확인합니다.")
 async def coin_wallet(ctx: disnake.CommandInteraction):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가상화폐통장")
@@ -3021,6 +3036,7 @@ async def coin_wallet(ctx: disnake.CommandInteraction):
 
 @bot.slash_command(name="코인거래", description="가상화폐를 구매 또는 판매할 수 있습니다.")
 async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), _count: int = commands.Param(name="개수")):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가상화폐거래")
@@ -3230,6 +3246,7 @@ async def get_stock_price(stock_name):
 
 @bot.slash_command(name="주식통장", description="보유중인 주식을 확인합니다.")
 async def stock_wallet(ctx: disnake.CommandInteraction):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "주식통장")
@@ -3254,6 +3271,7 @@ async def stock_wallet(ctx: disnake.CommandInteraction):
 
 @bot.slash_command(name="주식거래", description="주식을 구매 또는 판매할 수 있습니다.")
 async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), _count: int = commands.Param(name="개수")):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "주식거래")
@@ -4051,10 +4069,9 @@ async def check_user_in_db(user_id):
 @bot.event
 async def on_message(message):
     # 봇이 보낸 메시지는 무시
-    if message.author == bot.user:
+    if message.author == bot.user or message.author.bot:
         return
 
-    # 사용자 ID
     user_id = str(message.author.id)
 
     # 데이터베이스에서 사용자 데이터 확인
@@ -4063,73 +4080,75 @@ async def on_message(message):
     if user_exists:
         await add_exp(user_id, 5)
 
-    if message.author.bot:
-        return
+    # DM 채널에서의 처리
     if isinstance(message.channel, disnake.DMChannel):
-        user = str(f"{message.author.display_name}({message.author.name})")
-        avatar_url = message.author.avatar.url if message.author.avatar else None
+        await handle_dm_message(message)
 
-        # 데이터베이스 연결 및 TOS 확인
-        db_path = os.path.join('system_database', 'economy.db')
-        economy_aiodb = await aiosqlite.connect(db_path)
-        aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (message.author.id,))
-        dbdata = await aiocursor.fetchone()
-        await aiocursor.close()
+async def handle_dm_message(message):
+    user = f"{message.author.display_name}({message.author.name})"
+    avatar_url = message.author.avatar.url if message.author.avatar else None
 
-        if dbdata is not None and int(dbdata[0]) == 1:
-            try:
-                await message.add_reaction("❌")
-            except Exception as e:
-                print(f"이모지 반응 중 오류 발생: {e}")
+    # 데이터베이스 연결 및 TOS 확인
+    db_path = os.path.join('system_database', 'economy.db')
+    async with aiosqlite.connect(db_path) as economy_aiodb:
+        async with economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (message.author.id,)) as aiocursor:
+            dbdata = await aiocursor.fetchone()
 
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.\n@stone6718 DM으로 문의주세요.")
-            await message.channel.send(embed=embed)
-            return
-        else:
+    if dbdata is not None and int(dbdata[0]) == 1:
+        await send_error_response(message)
+        return
+
+    await message.add_reaction("✅")
+    print("문의가 접수되었습니다.")
+    
+    # 임베드 메시지 생성
+    dm_embed = disnake.Embed(title="새로운 문의", color=embedcolor)
+    dm_embed.add_field(name="사용자", value=user, inline=False)
+    dm_embed.add_field(name="아이디", value=message.author.id, inline=False)
+    dm_embed.add_field(name="내용", value=str(message.content), inline=False)
+    if avatar_url:
+        dm_embed.set_thumbnail(url=avatar_url)
+
+    # 특정 채널로 전송
+    await send_to_support_channel(dm_embed)
+
+    # 첨부 파일 처리
+    await handle_attachments(message)
+
+async def send_error_response(message):
+    try:
+        await message.add_reaction("❌")
+    except Exception as e:
+        print(f"이모지 반응 중 오류 발생: {e}")
+
+    embed = disnake.Embed(color=embederrorcolor)
+    embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.\n@stone6718 DM으로 문의주세요.")
+    await message.channel.send(embed=embed)
+
+async def send_to_support_channel(embed):
+    channel_id = int(sec.support_ch_id)
+    channel = bot.get_channel(channel_id)
+
+    if channel is None:
+        print(f"채널 ID {channel_id}을(를) 찾을 수 없습니다.")
+        return
+
+    try:
+        await channel.send(embed=embed)
+        print(f"메시지가 채널 ID {channel_id}로 전송되었습니다.")
+    except Exception as e:
+        print(f"메시지를 채널로 전송하는 중 오류 발생: {e}")
+
+async def handle_attachments(message):
+    if message.attachments:
+        for attachment in message.attachments:
             try:
-                await message.add_reaction("✅")
+                # 파일 다운로드 및 전송
+                file = await attachment.to_file()
+                await send_to_support_channel(file=file)
+                print(f"파일 {attachment.filename}이(가) 채널 ID {sec.support_ch_id}로 전송되었습니다.")
             except Exception as e:
-                print(f"이모지 반응 중 오류 발생: {e}")
-        
-        # 문의 접수 메시지 전송
-        embed = disnake.Embed(color=embedcolor)
-        embed.add_field(name="문의 접수", value=f"{user}, 문의가 접수되었습니다. 감사합니다!")
-        await message.channel.send(embed=embed)
-        
-        print("문의가 접수되었습니다.")
-        
-        # 임베드 메시지 생성
-        dm_embed = disnake.Embed(title="새로운 문의", color=embedcolor)
-        dm_embed.add_field(name="사용자", value=user, inline=False)
-        dm_embed.add_field(name="아이디", value=message.author.id, inline=False)
-        dm_embed.add_field(name="내용", value=str(message.content), inline=False)
-        if avatar_url:
-            dm_embed.set_thumbnail(url=avatar_url)
-        
-        # 특정 채널로 전송
-        channel_id = int(sec.support_ch_id)
-        channel = bot.get_channel(channel_id)
-        
-        if channel is None:
-            print(f"채널 ID {channel_id}을(를) 찾을 수 없습니다.")
-        else:
-            try:
-                await channel.send(embed=dm_embed)
-                print(f"메시지가 채널 ID {channel_id}로 전송되었습니다.")
-            except Exception as e:
-                print(f"메시지를 채널로 전송하는 중 오류 발생: {e}")
-        
-        # 첨부 파일 처리
-        if message.attachments:
-            for attachment in message.attachments:
-                try:
-                    # 파일 다운로드
-                    file = await attachment.to_file()
-                    await channel.send(file=file)
-                    print(f"파일 {attachment.filename}이(가) 채널 ID {channel_id}로 전송되었습니다.")
-                except Exception as e:
-                    print(f"파일을 채널로 전송하는 중 오류 발생: {e}")
+                print(f"파일을 채널로 전송하는 중 오류 발생: {e}")
 
 def get_uptime():
     """업타임을 계산하는 함수."""
@@ -4274,7 +4293,7 @@ async def draw_lottery():
 
                 if prize_amount > 0:
                     await addmoney(user_id, prize_amount)
-                    embed.add_field(name=f"{user_id}님", value=f"{prize_amount}원이 지급되었습니다.", inline=False)
+                    embed.add_field(name=f"{user_id}님", value=f"{prize_amount:,}원이 지급되었습니다.", inline=False)
 
                     # 당첨자에게 DM 전송
                     user = await bot.fetch_user(user_id)
@@ -4375,9 +4394,10 @@ async def check_experience():
             if dm_setting != 1:  # DM 수신이 비활성화된 경우 메시지를 보내지 않음
                 if user:
                     channel = await user.create_dm()
+                    adjusted_level = adjusted_level * 10000
                     embed = disnake.Embed(
                         title="레벨 업! 🎉",
-                        description=f'축하합니다! 레벨이 **{adjusted_level}**로 올랐습니다! 보상으로 **{adjusted_level * 10000}원**이 지급되었습니다.',
+                        description=f'축하합니다! 레벨이 **{adjusted_level}**로 올랐습니다! 보상으로 **{adjusted_level}원**이 지급되었습니다.',
                         color=0x00ff00
                     )
                     await channel.send(embed=embed)
