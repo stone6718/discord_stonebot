@@ -1536,14 +1536,14 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
             embed=disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="받는사람이 이용제한상태이므로 송금할수없습니다.")
             await ctx.send(embed=embed, ephemeral=True)
-            await exit()
+            return
         else:
             pass
     else:
         embed=disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="받는사람이 미가입상태이므로 송금할수없습니다.")
         await ctx.send(embed=embed, ephemeral=True)
-        await exit()
+        return
 
     if money < 1:
         embed = disnake.Embed(color=embederrorcolor)
@@ -2397,57 +2397,54 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 async def use_experience_potion(ctx, count: int = commands.Param(name="개수")):
     if not await check_permissions(ctx):
         return
+
     await command_use_log(ctx, "경험치병사용")
+    
     if not await member_status(ctx):
         return
 
     # 사용자의 인벤토리에서 경험치 병 수량 조회
-    user_item_count = await get_user_item(ctx.author.id, "경험치 병")  # 경험치 병의 현재 수량 조회
+    user_item_count = await get_user_item(ctx.author.id, "경험치 병")
 
-    if user_item_count <= 0:
-        embed = disnake.Embed(color=0xff0000)
-        embed.add_field(name="❌ 오류", value="경험치 병이 인벤토리에 없습니다.")
-        await ctx.send(embed=embed)
+    # 아이템 수량 검증
+    if user_item_count is None or user_item_count <= 0:
+        await send_error_embed(ctx, "경험치 병이 인벤토리에 없습니다.")
         return
 
     if count <= 0:
-        embed = disnake.Embed(color=0xff0000)
-        embed.add_field(name="❌ 오류", value="사용할 경험치 병의 수량은 1개 이상이어야 합니다.")
-        await ctx.send(embed=embed)
+        await send_error_embed(ctx, "사용할 경험치 병의 수량은 1개 이상이어야 합니다.")
         return
 
     if user_item_count < count:
-        embed = disnake.Embed(color=0xff0000)
-        embed.add_field(name="❌ 오류", value="인벤토리에 요청한 수량만큼의 경험치 병이 없습니다.")
-        await ctx.send(embed=embed)
+        await send_error_embed(ctx, "인벤토리에 요청한 수량만큼의 경험치 병이 없습니다.")
         return
 
     # 경험치 병의 add_exp 값을 아이템 테이블에서 조회
+    experience_per_potion = await fetch_experience_per_potion()
+    if experience_per_potion is None:
+        await send_error_embed(ctx, "경험치 병의 경험치 정보가 없습니다.")
+        return
+
+    total_experience = experience_per_potion * count
+
+    # 사용자 경험치 업데이트
+    await add_exp(ctx.author.id, total_experience)
+    await remove_item_from_user_inventory(ctx.author.id, "경험치 병", count)
+
+    embed = disnake.Embed(color=0x00ff00, description=f"{count}개의 경험치 병을 사용하여 {total_experience} 경험치를 얻었습니다.")
+    await ctx.send(embed=embed)
+
+async def send_error_embed(ctx, error_message):
+    embed = disnake.Embed(color=0xff0000, description=f"❌ 오류: {error_message}")
+    await ctx.send(embed=embed)
+
+async def fetch_experience_per_potion():
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
             await aiocursor.execute("SELECT add_exp FROM item WHERE name = ?", ("경험치 병",))
             exp_info = await aiocursor.fetchone()
-
-            if exp_info is None:
-                embed = disnake.Embed(color=0xff0000)
-                embed.add_field(name="❌ 오류", value="경험치 병의 경험치 정보가 없습니다.")
-                await ctx.send(embed=embed)
-                return
-
-            # 경험치 병 하나당 주어지는 경험치
-            experience_per_potion = exp_info[0]  # add_exp 값
-            total_experience = experience_per_potion * count
-
-    # 사용자 경험치 업데이트
-    await add_exp(ctx.author.id, total_experience)  # 경험치를 추가하는 함수
-
-    # 사용한 경험치 병 수량 업데이트
-    await remove_item_from_user_inventory(ctx.author.id, "경험치 병", count)  # 경험치 병 수량 차감
-
-    embed = disnake.Embed(color=0x00ff00)
-    embed.add_field(name="✅ 성공", value=f"{count}개의 경험치 병을 사용하여 {total_experience} 경험치를 얻었습니다.")
-    await ctx.send(embed=embed)
+            return exp_info[0] if exp_info else None
 
 class ItemView(disnake.ui.View):
     def __init__(self, data, per_page=5):
@@ -2458,7 +2455,6 @@ class ItemView(disnake.ui.View):
         self.max_page = (len(data) - 1) // per_page
         self.message = None
         self.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         self.update_buttons()
 
     def update_buttons(self):
@@ -2481,16 +2477,12 @@ class ItemView(disnake.ui.View):
         start = self.current_page * self.per_page
         end = start + self.per_page
 
-        # 아이템의 수에 따라 에러 처리를 합니다.
         for item in self.data[start:end]:
-            if len(item) == 4:  # 예상한 대로 4개의 값을 가져오는지 확인
+            if len(item) == 4:
                 name, price, damage, add_exp = item
-                center = damage
-                damage = add_exp
-                add_exp = center
                 embed.add_field(name=name, value=f"가격: {price:,}원 | 피해: {damage} | 경험치: {add_exp}", inline=False)
             else:
-                print(f"아이템 데이터 오류: {item}")  # 오류 메시지 출력
+                print(f"아이템 데이터 오류: {item}")
 
         embed.set_footer(text=f"페이지 {self.current_page + 1}/{self.max_page + 1} | 마지막 업데이트: {self.last_updated}")
         return embed
@@ -2555,6 +2547,7 @@ upgrade_chances = {
 async def upgrade_item(ctx, item_name: str):
     if not await check_permissions(ctx):
         return
+    
     await command_use_log(ctx, "아이템강화")
     if not await member_status(ctx):
         return
@@ -2574,97 +2567,100 @@ async def upgrade_item(ctx, item_name: str):
 
     # 사용자 캐시 조회
     user_cash = await get_cash_item_count(ctx.author.id)
-
     if user_cash < upgrade_cost:
         return await send_error_message(ctx, "캐시가 부족하여 강화할 수 없습니다.")
 
     # 캐시 차감
     await remove_cash_item_count(ctx.author.id, upgrade_cost)
 
-    # 강화 버튼 생성
+    # 버튼 생성
+    view = create_upgrade_view(ctx, item_name, current_class, upgrade_cost)
+
+    # 초기 메시지 전송
+    embed = create_upgrade_embed(item_name, current_class, upgrade_cost)
+    await ctx.send(embed=embed, view=view)
+
+async def create_upgrade_view(ctx, item_name, current_class, upgrade_cost):
     upgrade_button = disnake.ui.Button(label="강화", style=disnake.ButtonStyle.primary)
     cancel_button = disnake.ui.Button(label="강화 취소", style=disnake.ButtonStyle.danger)
 
-    # 버튼 뷰 생성
     view = disnake.ui.View()
     view.add_item(upgrade_button)
     view.add_item(cancel_button)
 
-    # 초기 메시지 전송
+    # 버튼 콜백 설정
+    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, ctx, item_name, current_class, upgrade_button, view)
+    cancel_button.callback = lambda interaction: cancel_callback(interaction, ctx)
+
+    return view
+
+async def create_upgrade_embed(item_name, current_class, upgrade_cost):
     embed = disnake.Embed(title="아이템 강화", color=0x00ffff)
     embed.add_field(name="강화할 아이템", value=item_name, inline=False)
     embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
     embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
-    await ctx.send(embed=embed, view=view)
+    return embed
 
-    async def upgrade_callback(interaction):
-        if interaction.user.id != ctx.author.id:
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="⚠️ 경고", value="이 버튼은 호출자만 사용할 수 있습니다.")
-            return await interaction.followup.send_message(embed=embed, ephemeral=True)
+async def upgrade_callback(interaction, ctx, item_name, current_class, upgrade_button, view):
+    if interaction.user.id != ctx.author.id:
+        return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
-        nonlocal current_class
+    # 강화 중 파괴 확률 체크
+    if await handle_destruction(interaction, ctx, item_name):
+        return
 
-        if current_class >= 10:
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="❌ 오류", value="이미 최대 강화 등급(10강)입니다.")
-            return await interaction.followup.edit_message(embed=embed, view=None)
+    # 강화 성공 확률 확인
+    success_chance = upgrade_chances.get(current_class + 1)
+    if success_chance is None:
+        return await send_error_message(interaction, "강화 성공 확률 정보를 찾을 수 없습니다.")
 
-        # 강화 중 파괴 확률 체크
-        destruction_chance = random.random()
-        if destruction_chance <= 0.05:  # 5% 확률로 파괴
-            defense_item_info = await get_user_item(ctx.author.id, "파괴방어권")
-            if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
-                await remove_item_from_user_inventory(ctx.author.id, "파괴방어권", 1)
-                embed = disnake.Embed(color=0x00ff00)
-                embed.add_field(name="✅ 방어 성공", value=f"{item_name} 아이템이 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
-                return await interaction.followup.edit_message(embed=embed, view=view)
+    if random.random() <= success_chance:
+        await handle_upgrade_success(interaction, ctx, item_name, current_class, view)
+    else:
+        await handle_upgrade_failure(interaction, ctx, item_name, current_class, view)
 
-            await remove_item_from_user_inventory(ctx.author.id, item_name, 1)
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="❌ 아이템 파괴", value=f"{item_name} 아이템이 파괴되었습니다.")
-            return await interaction.followup.edit_message(embed=embed, view=None)
-
-        # 강화 성공 확률 확인
-        success_chance = upgrade_chances.get(current_class + 1)
-        if success_chance is None:
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="❌ 오류", value="강화 성공 확률 정보를 찾을 수 없습니다.")
-            return await interaction.followup.edit_message(embed=embed, view=None)
-
-        if random.random() <= success_chance:
-            new_class = current_class + 1
-            await update_item_class(ctx.author.id, item_name, new_class)
+async def handle_destruction(interaction, ctx, item_name):
+    destruction_chance = random.random()
+    if destruction_chance <= 0.05:  # 5% 확률로 파괴
+        defense_item_info = await get_user_item(ctx.author.id, "파괴방어권")
+        if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
+            await remove_item_from_user_inventory(ctx.author.id, "파괴방어권", 1)
             embed = disnake.Embed(color=0x00ff00)
-            embed.add_field(name="✅ 강화 성공", value=f"{item_name} 아이템이 {new_class}강으로 강화되었습니다.")
-            current_class = new_class  # 현재 강화 등급 업데이트
-            embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
-            embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
-            if current_class >= 10:
-                return await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
-            await interaction.followup.edit_message(embed=embed, view=view)  # 버튼 유지
-        else:
-            await update_item_class(ctx.author.id, item_name, current_class)
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="❌ 강화 실패", value=f"{item_name} 아이템의 강화에 실패했습니다.")
-            embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
-            embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
-            embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
-            await interaction.followup.edit_message(embed=embed, view=view)
-
-    async def cancel_callback(interaction):
-        if interaction.user.id != ctx.author.id:
-            embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="⚠️ 경고", value="이 버튼은 호출자만 사용할 수 있습니다.")
-            return await interaction.followup.send_message(embed=embed, ephemeral=True)
-
+            embed.add_field(name="✅ 방어 성공", value=f"{item_name} 아이템이 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
+            await interaction.followup.edit_message(embed=embed)
+            return True  # 방어 성공
+        await remove_item_from_user_inventory(ctx.author.id, item_name, 1)
         embed = disnake.Embed(color=0xff0000)
-        embed.add_field(name="⚔️ 강화 취소", value="강화가 취소되었습니다.")
-        await interaction.followup.edit_message(embed=embed, view=None)
+        embed.add_field(name="❌ 아이템 파괴", value=f"{item_name} 아이템이 파괴되었습니다.")
+        await interaction.followup.edit_message(embed=embed)
+        return True  # 아이템 파괴
+    return False  # 파괴되지 않음
 
-    # 버튼 콜백 설정
-    upgrade_button.callback = upgrade_callback
-    cancel_button.callback = cancel_callback
+async def handle_upgrade_success(interaction, ctx, item_name, current_class, view):
+    new_class = current_class + 1
+    await update_item_class(ctx.author.id, item_name, new_class)
+    embed = disnake.Embed(color=0x00ff00)
+    embed.add_field(name="✅ 강화 성공", value=f"{item_name} 아이템이 {new_class}강으로 강화되었습니다.")
+    embed.add_field(name="현재 강화 등급", value=f"{new_class}강", inline=False)
+    embed.add_field(name="비용", value=f"{(new_class + 1) * 100 + 100} 캐시", inline=False)
+    await interaction.followup.edit_message(embed=embed, view=view)
+
+async def handle_upgrade_failure(interaction, ctx, item_name, current_class, view):
+    await update_item_class(ctx.author.id, item_name, current_class)
+    embed = disnake.Embed(color=0xff0000)
+    embed.add_field(name="❌ 강화 실패", value=f"{item_name} 아이템의 강화에 실패했습니다.")
+    embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
+    embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
+    embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
+    await interaction.followup.edit_message(embed=embed, view=view)
+
+async def cancel_callback(interaction, ctx):
+    if interaction.user.id != ctx.author.id:
+        return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
+
+    embed = disnake.Embed(color=0xff0000)
+    embed.add_field(name="⚔️ 강화 취소", value="강화가 취소되었습니다.")
+    await interaction.followup.edit_message(embed=embed, view=None)
 
 async def send_error_message(ctx, message):
     embed = disnake.Embed(color=0xff0000)
@@ -3244,6 +3240,12 @@ async def get_stock_price(stock_name):
     
     return stock_price  # 주식 가격 반환
 
+async def getuser_stock(user_id):
+    stocks = await get_stock_data(user_id)
+    if not stocks:
+        return None  # 주식이 없으면 None 반환
+    return stocks
+
 @bot.slash_command(name="주식통장", description="보유중인 주식을 확인합니다.")
 async def stock_wallet(ctx: disnake.CommandInteraction):
     await ctx.response.defer()
@@ -3252,21 +3254,18 @@ async def stock_wallet(ctx: disnake.CommandInteraction):
     await command_use_log(ctx, "주식통장")
     if not await member_status(ctx):
         return
+
     stocks = await getuser_stock(ctx.author.id)
 
-    # 사용자 이름 가져오기
     user_name = ctx.author.name
 
     if not stocks:
         embed = disnake.Embed(title=f"{user_name}의 주식통장 💰", color=0x00ff00)
         embed.add_field(name="❌ 오류", value="보유하고 있는 주식이 없습니다.")
-        embed.add_field(name="💵 총 가격", value="0 원", inline=False)  # 주식이 없을 경우 총 가격 초기화
+        embed.add_field(name="💵 총 가격", value="0 원", inline=False)
         await ctx.send(embed=embed)
     else:
-        # 주식 정보를 담고 있는 StockView 생성
         view = StockView(stocks)
-        
-        # 초기 임베드 생성 및 메시지 전송
         view.message = await ctx.send(embed=await view.create_embed(), view=view)
 
 @bot.slash_command(name="주식거래", description="주식을 구매 또는 판매할 수 있습니다.")
@@ -4227,7 +4226,7 @@ async def reset_check_in_status():
 reset_check_in_status.start()
 
 db_path = os.path.join('system_database', 'lotto.db')
-channel_id = 1288135016752087040  # 특정 채널 ID
+channel_id = 1300246995956404224  # 특정 채널 ID
 
 @tasks.loop(seconds=1)  # 매 1초마다 체크
 async def lottery_draw():
