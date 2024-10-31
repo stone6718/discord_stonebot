@@ -3,10 +3,8 @@ import aiosqlite, disnake, security, requests
 from datetime import datetime
 from googletrans import Translator
 from email.utils import formatdate
-from sdk.api.message import Message
 from email.mime.text import MIMEText
 from email.headerregistry import Address
-from sdk.exceptions import CoolsmsException
 from email.mime.multipart import MIMEMultipart
 from discord_webhook.webhook import DiscordWebhook
 
