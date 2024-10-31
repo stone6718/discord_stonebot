@@ -376,6 +376,9 @@ async def ai_ask(ctx: disnake.CommandInteraction, choice: str = commands.Param(n
     await command_use_log(ctx, "ai질문")
     await membership(ctx)  # 회원 상태 확인
 
+    if not ctx.response.is_done():
+        await ctx.response.defer()  # 응답 지연
+
     # 사용자의 credit 확인
     user_credit = await get_user_credit(ctx.author.id)
 
@@ -387,8 +390,6 @@ async def ai_ask(ctx: disnake.CommandInteraction, choice: str = commands.Param(n
 
     # credit 사용
     await use_user_credit(ctx.author.id, credit_cost)
-
-    await ctx.response.defer()  # 응답 지연
 
     try:
         if choice == "DALL·E":
@@ -1837,10 +1838,9 @@ async def purchase_lottery(interaction: disnake.ApplicationCommandInteraction, a
 
     # 데이터베이스 파일 경로
     db_path = os.path.join('system_database', 'lotto.db')
+    purchased_numbers = []  # 구매한 로또 번호를 저장할 리스트
     # 텍스트 파일 경로
     text_file_path = os.path.join('system_database', 'purchased_lotteries.txt')
-
-    purchased_numbers = []  # 구매한 복권 번호를 저장할 리스트
 
     if auto:
         async with aiosqlite.connect(db_path) as db:
@@ -1850,7 +1850,7 @@ async def purchase_lottery(interaction: disnake.ApplicationCommandInteraction, a
                 await db.execute('INSERT OR IGNORE INTO lottery (user_id, numbers) VALUES (?, ?)', (user_id, lottery_numbers_str))
                 purchased_numbers.append(lottery_numbers_str)
             await db.commit()
-        await interaction.send(f"{count}개의 복권이 자동으로 구매되었습니다.")
+        await interaction.send(f"{count}개의 로또가 자동으로 구매되었습니다.")
     else:
         if numbers:
             try:
@@ -1862,11 +1862,17 @@ async def purchase_lottery(interaction: disnake.ApplicationCommandInteraction, a
                     await db.execute('INSERT OR IGNORE INTO lottery (user_id, numbers) VALUES (?, ?)', (user_id, lottery_numbers_str))
                     await db.commit()
                 purchased_numbers.append(lottery_numbers_str)
-                await interaction.send(f"복권 번호 {manual_numbers}이(가) 구매되었습니다.")
+                await interaction.send(f"로또 번호 {manual_numbers}이(가) 구매되었습니다.")
             except ValueError:
                 await interaction.send("잘못된 번호 형식입니다. 1부터 45 사이의 중복되지 않는 6개 숫자를 입력하세요.")
         else:
-            await interaction.send("수동 구매를 원하시면 복권 번호를 입력해주세요.")
+            await interaction.send("수동 구매를 원하시면 로또 번호를 입력해주세요.")
+
+    # 구매한 로또 번호를 DM으로 임베드 형태로 전송
+    if purchased_numbers:
+        embed = disnake.Embed(title="구매한 로또 번호", description="\n".join(purchased_numbers), color=0x00ff00)
+        embed.set_footer(text="행운을 빕니다!")
+        await interaction.author.send(embed=embed)
 
     # 구매한 복권 번호를 텍스트 파일에 저장
     if purchased_numbers:

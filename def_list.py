@@ -1029,9 +1029,15 @@ async def membership(ctx):
         embed.add_field(name="❌ 오류", value="유료 회원만 이용가능한 기능입니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
-    elif member_class == 1:  # 1: 회원
+    elif member_class == 1:  # 1: 브론즈_회원
         pass
-    elif member_class == 2:  # 2: 관리자
+    elif member_class == 2:  # 2: 실버_회원
+        pass
+    elif member_class == 3:  # 2: 다이아_회원
+        pass
+    elif member_class == 4:  # 2: 레전드_회원
+        pass
+    elif member_class == 5:  # 2: 개발자
         pass
     else:
         embed = disnake.Embed(color=embederrorcolor)
@@ -1148,7 +1154,7 @@ async def delete_server_database(guild_id):
 
 def send_email(ctx, recipient, verifycode):
     msg = MIMEMultipart()
-    msg['From'] = str(Address("CodeStone", addr_spec=smtp_user))  
+    msg['From'] = str(Address("NET CLOUD", addr_spec=smtp_user))  
     msg['To'] = recipient
     msg['Subject'] = '스톤봇 이메일 인증'
     msg['Date'] = formatdate(localtime=True)
@@ -1174,7 +1180,7 @@ def send_email(ctx, recipient, verifycode):
                     <div class="verification-code">{verifycode}</div>
                     <p>이 코드는 3분 후에 만료됩니다.</p>
                     <p>인증을 요청하지 않았다면, 이 메일을 무시해주세요.</p>
-                    <h5>CodeStone 고객지원 +82 10-7460-6675</h5>
+                    <h5>CodeStone 고객지원 +82 0507-1374-6680</h5>
                 </div>
             </div>
         </body>
