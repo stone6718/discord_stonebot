@@ -1012,36 +1012,8 @@ async def membership(ctx):
     
     if dbdata is None:
         # 데이터가 없을 경우 비회원으로 등록
-        await economy_aiodb.execute("INSERT INTO user (id, class) VALUES (?, ?)", (ctx.author.id, 0))  # 0: 비회원
-        await economy_aiodb.commit()
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="유료 회원만 이용가능한 기능입니다.")
-        await ctx.send(embed=embed, ephemeral=True)
-        return
-    
-    await aiocursor.close()
-    member_class = int(dbdata[0])
-    
-    if member_class == 0: # 0: 비회원
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="유료 회원만 이용가능한 기능입니다.")
-        await ctx.send(embed=embed, ephemeral=True)
-        return
-    elif member_class == 1:  # 1: 브론즈_회원
-        pass
-    elif member_class == 2:  # 2: 실버_회원
-        pass
-    elif member_class == 3:  # 2: 다이아_회원
-        pass
-    elif member_class == 4:  # 2: 레전드_회원
-        pass
-    elif member_class == 5:  # 2: 개발자
-        pass
-    else:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="오류가 발생하였습니다, 개발자에게 문의해주세요.")
-        await ctx.send(embed=embed, ephemeral=True)
-        return
+        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", (ctx.author.id, 0))  # 0: 비회원
+        dbdata = await aiocursor.fetchone()
 
 async def database_create(ctx):
     # 서버 아이디 및 서버 이름 가져오기

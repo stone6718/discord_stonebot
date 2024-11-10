@@ -622,7 +622,6 @@ class NextButton(disnake.ui.Button):
             view.current_page += 1
             await view.update_message(interaction)
 
-
 @bot.slash_command(name="언어목록", description="지원하는 언어 목록을 확인합니다.")
 async def language_list(ctx: disnake.CommandInteraction):
     view = LanguageView(LANGUAGES)
@@ -708,10 +707,8 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         filename = data['url'] if stream else ydl.prepare_filename(data)
         return cls(FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
-# 음성 채널 별 대기열 및 클라이언트 관리
 waiting_songs = defaultdict(list)
 voice_clients = {}
-current_song_index = defaultdict(int)
 
 @bot.slash_command(name='재생', description='유튜브 링크 또는 제목으로 음악을 재생합니다.')
 async def play(ctx, url_or_name: str):
@@ -725,15 +722,12 @@ async def play(ctx, url_or_name: str):
         return await ctx.send("음성 채널에 연결되어 있지 않습니다. 먼저 음성 채널에 들어가세요.")
 
     channel_id = ctx.author.voice.channel.id
-
-    # 음성 클라이언트 연결
     voice_client = await connect_voice_client(ctx, channel_id)
 
-    # 현재 음악이 재생 중인 경우
     if voice_client.is_playing():
-        return await ctx.send("현재 음악이 재생 중입니다. 새로운 노래를 추가할 수 없습니다.")
+        waiting_songs[channel_id].append(url_or_name)
+        return await ctx.send(f"현재 음악이 재생 중입니다. '{url_or_name}'가 끝나면 재생됩니다.")
 
-    # 플레이리스트 처리
     if await is_playlist(url_or_name):
         await handle_playlist(ctx, url_or_name, channel_id)
     else:
@@ -743,16 +737,12 @@ async def connect_voice_client(ctx, channel_id):
     if channel_id not in voice_clients or not voice_clients[channel_id].is_connected():
         voice_client = await ctx.author.voice.channel.connect()
         voice_clients[channel_id] = voice_client
-    else:
-        voice_client = voice_clients[channel_id]
-    return voice_client
+    return voice_clients[channel_id]
 
 async def handle_playlist(ctx, url_or_name, channel_id):
     playlist_owner = await get_playlist_owner(url_or_name)
-
     if playlist_owner != ctx.author.id:
-        embed = disnake.Embed(color=0xff0000, title="오류", description="이 플레이리스트의 소유자가 아닙니다.")
-        return await ctx.send(embed=embed)
+        return await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description="이 플레이리스트의 소유자가 아닙니다."))
 
     songs = await get_songs_from_playlist(url_or_name)
     waiting_songs[channel_id].extend(songs)
@@ -763,34 +753,22 @@ async def play_song(ctx, channel_id, url_or_name):
     voice_client = voice_clients.get(channel_id)
 
     if voice_client is None or not voice_client.is_connected():
-        await ctx.send("음성 채널에 연결되어 있지 않습니다.")
-        return
-
-    if voice_client.is_playing():
-        waiting_songs[channel_id].append(url_or_name)
-        await ctx.send(f"현재 음악이 재생 중입니다. '{url_or_name}'가 끝나면 재생됩니다.")
-        return
+        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
 
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
+        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)))
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=f'재생 중: {player.title}\n[링크]({player.url})')
+        await send_control_buttons(ctx, embed)
     except Exception as e:
-        embed = disnake.Embed(color=0xff0000, title="오류", description=str(e))
-        return await ctx.send(embed=embed)
-
-    voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)))
-    await send_control_buttons(ctx, embed)
+        await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
 
 async def play_next_song(ctx, channel_id):
-    if ctx.guild.voice_client is None:
-        await ctx.send("음성 클라이언트가 연결되어 있지 않습니다.")
-        return
+    if not waiting_songs[channel_id]:
+        return await ctx.send("대기열이 비어 있습니다.")
 
-    if waiting_songs[channel_id]:
-        next_song = waiting_songs[channel_id].pop(0)  # 대기열에서 다음 곡을 가져옴
-        await play_song(ctx, channel_id, next_song)  # 다음 곡 재생
-    else:
-        await ctx.send("대기열이 비어 있습니다.")
+    next_song = waiting_songs[channel_id].pop(0)
+    await play_song(ctx, channel_id, next_song)
 
 @asynccontextmanager
 async def connect_db():
@@ -802,14 +780,10 @@ async def connect_db():
         await conn.close()
 
 async def is_playlist(name):
-    try:
-        async with connect_db() as conn:
-            cursor = await conn.execute("SELECT COUNT(DISTINCT playlist_name) FROM playlists WHERE playlist_name = ?", (name,))
-            result = await cursor.fetchone()
-            return result[0] > 0
-    except aiosqlite.OperationalError as e:
-        print(f"데이터베이스 오류: {e}")
-        return False  # 또는 적절한 처리를 추가
+    async with connect_db() as conn:
+        cursor = await conn.execute("SELECT COUNT(DISTINCT playlist_name) FROM playlists WHERE playlist_name = ?", (name,))
+        result = await cursor.fetchone()
+        return result[0] > 0
 
 async def get_playlist_owner(playlist_name):
     async with connect_db() as conn:
@@ -839,7 +813,6 @@ async def send_control_buttons(ctx, embed):
 
     await ctx.send(embed=embed, view=button_row)
 
-    # 각 버튼의 콜백 설정
     button_row.children[0].callback = lambda i: pause_callback(i, ctx)
     button_row.children[1].callback = lambda i: resume_callback(i, ctx)
     button_row.children[2].callback = lambda i: volume_change_callback(i, ctx, 0.1)
@@ -861,10 +834,10 @@ async def volume_change_callback(interaction, ctx, change):
     if ctx.guild.voice_client.source:
         new_volume = min(max(ctx.guild.voice_client.source.volume + change, 0.0), 1.0)
         ctx.guild.voice_client.source.volume = new_volume
-        await interaction.followup.send_message(f"현재 음량: {new_volume:.1f}", ephemeral=True)
+        await interaction.followup.send(f"현재 음량: {new_volume:.1f}", ephemeral=True)
 
 async def change_song_callback(interaction, ctx):
-    await interaction.followup.send_message("변경할 음악의 유튜브 링크 또는 음악 제목을 입력해주세요:", ephemeral=True)
+    await interaction.followup.send("변경할 음악의 유튜브 링크 또는 음악 제목을 입력해주세요:", ephemeral=True)
 
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel
@@ -872,7 +845,6 @@ async def change_song_callback(interaction, ctx):
     try:
         msg = await bot.wait_for('message', check=check, timeout=30.0)
         new_url_or_name = msg.content
-
         new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
 
         ctx.guild.voice_client.stop()
@@ -1381,49 +1353,51 @@ async def money_ranking(ctx: disnake.CommandInteraction):
     else:
         embed = disnake.Embed(title="돈순위", color=0x00ff00)
         for rank, (user_id, money) in enumerate(richest_users, start=1):
-            embed.add_field(name=f"{rank}위: {user_id}", value=f"돈: {money}", inline=False)
+            embed.add_field(name=f"{rank}위", value=f"<@{user_id}> : {money}", inline=False)
 
         await ctx.send(embed=embed)
 
 @bot.slash_command(name="돈관리", description="유저의 돈을 관리합니다. [개발자전용]")
-async def money_edit(ctx, user: str = commands.Param(name="유저"), choice: str = commands.Param(name="선택", choices=["차감", "추가"]), money: int = commands.Param(name="돈")):
+async def money_edit(ctx, member_id: str = commands.Param(name="유저"), choice: str = commands.Param(name="선택", choices=["차감", "추가"]), money: int = commands.Param(name="돈")):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "돈관리")
     
     if ctx.author.id == developer:
         # 멘션 또는 ID에서 사용자 ID 추출
-        try:
-            user_id = None
-            
-            # 멘션 형식 처리
-            if user.startswith('<@') and user.endswith('>'):
-                user_id = int(user[3:-1]) if user[2] == '!' else int(user[2:-1])  # <@!123456789> 또는 <@123456789>
-            else:
-                user_id = int(user)  # ID 형식
+        user = ctx.author if member_id is None else await bot.fetch_user(member_id)
+        if user is None:
+            await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
+            return
 
-            user_obj = ctx.guild.get_member(user_id)
-            if user_obj is None:
-                raise ValueError("사용자를 찾을 수 없습니다.")
-        except ValueError:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="유효한 사용자 멘션 또는 ID를 입력하세요.")
-            await ctx.send(embed=embed, ephemeral=True)
+        user_data = await fetch_user_data(user.id)
+        if user_data is None:
+            await ctx.followup.send(f"{user.mention}, 가입되지 않은 유저입니다.", ephemeral=True)
+            return
+
+        tos_data = await fetch_tos_status(user.id)
+        tos = tos_data[0] if tos_data else None
+
+        if tos is None:
+            await ctx.followup.send(f"{user.mention}, TOS 정보가 없습니다.", ephemeral=True)
+            return
+        if tos == 1:
+            await ctx.followup.send(f"{user.mention}, 이용제한된 유저입니다.", ephemeral=True)
             return
 
         # 돈 차감 또는 추가
         if choice == "차감":
-            if not await removemoney(user_obj.id, money):
+            if not await removemoney(user.id, money):
                 return await ctx.send("그 사용자의 포인트를 마이너스로 줄 수 없어요!")
             embed = disnake.Embed(title="잔액 차감", color=embedsuccess)
             embed.add_field(name="차감 금액", value=f"{money:,}원")
-            embed.add_field(name="대상", value=f"{user_obj.mention}")
+            embed.add_field(name="대상", value=f"{user.mention}")
             await ctx.send(embed=embed)
         elif choice == "추가":
-            await addmoney(user_obj.id, money)
+            await addmoney(user.id, money)
             embed = disnake.Embed(title="잔액 추가", color=embedsuccess)
             embed.add_field(name="추가 금액", value=f"{money:,}원")
-            embed.add_field(name="대상", value=f"{user_obj.mention}")
+            embed.add_field(name="대상", value=f"{user.mention}")
             await ctx.send(embed=embed)
         else:
             embed = disnake.Embed(color=embederrorcolor)
@@ -1528,7 +1502,8 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
         return
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
-    
+
+
     aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (get_user.id,))
     dbdata = await aiocursor.fetchone()
     await aiocursor.close()
@@ -1551,7 +1526,7 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
         embed.add_field(name="❌ 오류", value="송금 금액은 1원이상부터 가능합니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
-    
+
     send_user = ctx.author
     send_user_money = await getmoney(send_user.id)
     if send_user_money < money:
@@ -2107,6 +2082,7 @@ async def check_membership_status(ctx: disnake.CommandInteraction):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "멤버쉽")
+    await membership(ctx)
     db_path = os.path.join('system_database', 'membership.db')
     economy_aiodb = await aiosqlite.connect(db_path)
 
@@ -2114,39 +2090,30 @@ async def check_membership_status(ctx: disnake.CommandInteraction):
     aiocursor = await economy_aiodb.execute("SELECT class, expiration_date, credit FROM user WHERE id=?", (ctx.author.id,))
     dbdata = await aiocursor.fetchone()
 
-    if dbdata is None:
-        # 사용자 데이터가 없다면 새로 생성
-        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", 
-                                      (ctx.author.id, 0, None, 5))  # 기본값으로 비회원, 만료일 없음, 크레딧 0
-        await economy_aiodb.commit()
+    credits = 0  # 기본값으로 초기화
 
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="회원이 아닙니다. 새로 가입되었습니다.")
-        embed.add_field(name="💰 크레딧", value="5")
-        await ctx.send(embed=embed, ephemeral=True)
+    member_class = int(dbdata[0])
+    expiration_date = dbdata[1]
+    credits = dbdata[2]  # 사용자 데이터에서 크레딧 가져오기
+
+    if member_class == 0:
+        status = "비회원"
+    elif member_class == 1:
+        status = "브론즈_회원"
+    elif member_class == 2:
+        status = "실버_회원"
+    elif member_class == 3:
+        status = "다이아_회원"
+    elif member_class == 4:
+        status = "레전드_회원"
+    elif member_class == 5:
+        status = "개발자"
     else:
-        member_class = int(dbdata[0])
-        expiration_date = dbdata[1]
-        credits = dbdata[2]
+        print("error : 데이터값이 0, 1, 2, 3, 4, 5가 아닙니다.")
 
-        if member_class == 0:
-            status = "비회원"
-        elif member_class == 1:
-            status = "브론즈_회원"
-        elif member_class == 2:
-            status = "실버_회원"
-        elif member_class == 3:
-            status = "다이아_회원"
-        elif member_class == 4:
-            status = "레전드_회원"
-        elif member_class == 5:
-            status = "개발자"
-        else:
-            print("error : 데이터값이 0, 1, 2, 3, 4, 5가 아닙니다.")
-
-        embed = disnake.Embed(color=0x00ff00)
-        embed.add_field(name=f"{ctx.author.name}님의 멤버십 📋", value=f"상태: {status}\n만료일: {expiration_date}\n💰 크레딧: {credits}")
-        await ctx.send(embed=embed)
+    embed = disnake.Embed(color=0x00ff00)
+    embed.add_field(name=f"{ctx.author.name}님의 멤버십 📋", value=f"상태: {status}\n만료일: {expiration_date}\n💰 크레딧: {credits}")
+    await ctx.send(embed=embed)
 
     await aiocursor.close()
     await economy_aiodb.close()
@@ -4433,6 +4400,10 @@ def calculate_credit(user_class):
         return 30
     elif user_class == 2:
         return 60
+    elif user_class == 3:
+        return 90
+    elif user_class == 4:
+        return 120
     return 0  # 기본값
 
 @tasks.loop(seconds=60)  # 1분마다 실행
