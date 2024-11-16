@@ -1124,7 +1124,7 @@ async def delete_server_database(guild_id):
 
 def send_email(recipient, verifycode):
     msg = MIMEMultipart()
-    msg['From'] = str(Address("넷클라우드", addr_spec=security.smtp_user))  
+    msg['From'] = str(Address("NET CLOUD", addr_spec=security.smtp_user))  
     msg['To'] = recipient
     msg['Subject'] = 'NET CLOUD 이메일 인증'
     msg['Date'] = formatdate(localtime=True)
