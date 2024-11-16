@@ -1122,47 +1122,50 @@ async def delete_server_database(guild_id):
     if os.path.exists(db_filename):
         os.remove(db_filename)
 
-def send_email(ctx, recipient, verifycode):
+def send_email(recipient, verifycode):
     msg = MIMEMultipart()
-    msg['From'] = str(Address("NET CLOUD", addr_spec=smtp_user))  
+    msg['From'] = str(Address("넷클라우드", addr_spec=security.smtp_user))  
     msg['To'] = recipient
-    msg['Subject'] = '스톤봇 이메일 인증'
+    msg['Subject'] = 'NET CLOUD 이메일 인증'
     msg['Date'] = formatdate(localtime=True)
 
     body = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="ko">
         <head>
-            <meta charset="utf-8">
-            <title>CodeStone Email Verify</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>메일 인증</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
             <style>
-                body {{ background-color: #333; color: #fff; font-family: Arial, sans-serif; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
-                .outer-box {{ background-color: #333; max-width: 2400px; padding: 160px; border: 1px solid #777; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }}
-                .verification-box {{ background-color: #555; color: #fff; border: 2px solid #777; padding: 20px; text-align: center; max-width: 500px; margin: auto; border-radius: 30px; }}
-                .verification-code {{ font-size: 24px; letter-spacing: 5px; font-weight: bold; margin: 20px 0; }}
+                body {{font-family: 'Noto Sans KR', sans-serif; background-color: #1a202c; display: flex; align-items: center; justify-content: center; min-height: 100vh;}}
+                .container {{background-color: #2d3748; padding: 1rem; border-radius: 1.5rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); margin-left: 35%; margin-right: 35%; height: auto; text-align: center;}}
+                .subtitle {{color: #81e6d9; font-size: 1.5rem; font-weight: bold; margin-bottom: 1.5rem;}}
+                .text {{color: #fff; margin-bottom: 1rem;}}
+                .button {{background-color: #38a169; color: white; padding: 0.5rem 1rem; border-radius: 0.25rem; margin-bottom: 1.5rem;}}
+                .footer {{color: rgb(150, 150, 150);}}
             </style>
         </head>
         <body>
-            <div class="outer-box">
-                <div class="verification-box">
-                    <h2>이메일 인증</h2>
-                    <p>{ctx.author.name} 님 {ctx.guild.name} 가입 인증을 위한 코드를 입력해주세요.</p>
-                    <div class="verification-code">{verifycode}</div>
-                    <p>이 코드는 3분 후에 만료됩니다.</p>
-                    <p>인증을 요청하지 않았다면, 이 메일을 무시해주세요.</p>
-                    <h5>CodeStone 고객지원 +82 0507-1374-6680</h5>
-                </div>
+            <div class="container">
+                <center><img src="https://i.ibb.co/J5dD23R/CLOUD1-nobg.png" alt="CLOUD1-nobg" width="230px" height="100px"></center>
+                <h2 class="subtitle">메일인증 안내</h2>
+                <p class="text">안녕하세요, 넷클라우드입니다.<br>넷클라우드를 이용해 주셔서 감사합니다.<br></p>
+                <button class="button">{verifycode}</button>
+                <p class="footer">요청하지 않으셨다면 무시해주세요.</p>
+                <p class="footer">고객지원 0507-1374-6680</p>
             </div>
         </body>
     </html>
     """
-    msg.attach(MIMEText(body, 'html'))  # 'plain' 대신 'html' 사용
     
-    server = smtplib.SMTP(smtp_server, 587)
-    server.starttls()
-    server.login(smtp_user, smtp_password)
-    server.send_message(msg)
-    server.quit()
+    msg.attach(MIMEText(body, 'html'))
+    
+    with smtplib.SMTP(security.smtp_server, 587) as server:
+        server.starttls()
+        server.login(security.smtp_user, security.smtp_password)
+        server.send_message(msg)
 
 # 쿨다운 정보를 로드하는 함수
 def load_cooldowns():

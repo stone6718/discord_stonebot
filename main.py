@@ -304,15 +304,15 @@ async def weather(ctx, region: str = commands.Param(name="지역", description="
     try:
         now = datetime.now()  # 현재 시각 가져오기
 
-        검색 = region + " 날씨"
-        url = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=" + 검색
+        search = region + " 날씨"
+        url = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=" + search
         hdr = {'User-Agent': 'Mozilla/5.0'}
         req = requests.get(url, headers=hdr)
         html = req.text
         bsObj = bs4.BeautifulSoup(html, "html.parser")
 
-        온도 = bsObj.find('div', class_='temperature_text')
-        온도텍 = 온도.text
+        temperature = bsObj.find('div', class_='temperature_text')
+        온도텍 = temperature.text
         온도결과 = re.sub(r'[^0-9.]', '', 온도텍.strip().split('°')[0])
 
         체감온도 = bsObj.find('div', class_='sort')
@@ -1353,7 +1353,7 @@ async def money_ranking(ctx: disnake.CommandInteraction):
     else:
         embed = disnake.Embed(title="돈순위", color=0x00ff00)
         for rank, (user_id, money) in enumerate(richest_users, start=1):
-            embed.add_field(name=f"{rank}위", value=f"<@{user_id}> : {money}", inline=False)
+            embed.add_field(name=f"{rank}위", value=f"<@{user_id}> | {money:,}원", inline=False)
 
         await ctx.send(embed=embed)
 
