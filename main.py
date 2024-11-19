@@ -6,6 +6,7 @@ from def_list import *
 import yt_dlp as youtube_dl
 from googletrans import Translator
 from disnake import FFmpegPCMAudio
+from disnake import TextInputStyle
 from collections import defaultdict
 from importlib.metadata import version
 from captcha.image import ImageCaptcha
@@ -1052,173 +1053,57 @@ async def remove_from_playlist(ctx, playlist_name: str, song: str):
 
         await ctx.send(embed=embed)
 
-@bot.slash_command(name='인증_문자', description='문자를 이용해서 인증을 합니다.')
-async def sms_verify(ctx, phone_number: str):
-    if not await check_permissions(ctx):
-        return
-    await command_use_log(ctx, "인증_문자")
-    db_path = os.path.join(os.getcwd(), "database", f"{ctx.guild.id}.db")
-    
-    if not os.path.exists(db_path):
-        await database_create(ctx)
-    else:
-        aiodb = await aiosqlite.connect(db_path)
-        aiocursor = await aiodb.execute("SELECT 인증역할, 인증채널 FROM 설정")
-        role_id, channel_id = await aiocursor.fetchone()
-        await aiocursor.close()
-        await aiodb.close()
+# 전역 변수 선언
+A = 0
+B = 0
+product = 0
 
-    if role_id:
-        role = ctx.guild.get_role(role_id)
-        if role:
-            # 인증 역할이 이미 부여된 경우
-            if role in ctx.author.roles:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="이미 인증된 상태입니다.")
-                await ctx.send(embed=embed, ephemeral=True)
-                return
-            if channel_id:
-                channel = ctx.guild.get_channel(channel_id)
-                if channel and channel == ctx.channel:
-                    # 인증 채널에서만 작동하는 코드 작성
-                    verify_code = random.randint(100000, 999999)
-                    text = f"인증번호: {verify_code}"
-                    
-                    # 카카오 알림톡 메시지 전송
-                    message = {
-                        'messages': [{
-                            'to': phone_number,
-                            'from': sec.send_number,
-                            'text': text,
-                            'kakaoOptions': {
-                                'pfId': sec.kakao_pfid,
-                                'templateId': sec.kakao_templateid,
-                                'variables': {
-                                    '#{verify_code}': verify_code,
-                                    '#{activity}': "스톤봇 인증"
-                                }
-                            }
-                        }]
-                    }
-                    if coolsms_kakao.send_kakao(message):  # 카카오 알림톡 전송
-                        embed = disnake.Embed(color=embedsuccess)
-                        embed.add_field(name="문자 인증", value=f"**{phone_number}** 으로 인증번호를 전송했습니다.")
-                        await ctx.send(embed=embed, ephemeral=True)
-                        print(f'''인증번호({verify_code})가 "{phone_number}"로 전송되었습니다.''')
-
-                        def check(m):
-                            return m.author == ctx.author and m.content == str(verify_code)
-
-                        try:
-                            msg = await bot.wait_for('message', check=check, timeout=180)
-                            if msg:
-                                await ctx.channel.purge(limit=1)
-                                await ctx.author.add_roles(role)
-                                embed = disnake.Embed(color=embedsuccess)
-                                embed.add_field(name="문자 인증", value=f"{ctx.author.mention} 문자 인증이 완료되었습니다.")
-                                await ctx.send(embed=embed)
-                        except disnake.TimeoutError:
-                            embed = disnake.Embed(color=embederrorcolor)
-                            embed.add_field(name="❌ 오류", value="인증 시간이 초과되었습니다. 다시 시도해주세요.")
-                            await ctx.send(embed=embed)
-                    else:
-                        embed = disnake.Embed(color=embederrorcolor)
-                        embed.add_field(name="❌ 오류", value="카카오 알림톡 전송에 실패했습니다.")
-                        await ctx.send(embed=embed, ephemeral=True)
-                else:
-                    embed = disnake.Embed(color=embederrorcolor)
-                    embed.add_field(name="❌ 오류", value="인증 채널에서만 인증 명령어를 사용할 수 있습니다.")
-                    await ctx.send(embed=embed, ephemeral=True)
-            else:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="인증채널이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
-                await ctx.send(embed=embed, ephemeral=True)
-        else:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
-            await ctx.send(embed=embed, ephemeral=True)
-    else:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
-        await ctx.send(embed=embed, ephemeral=True)
+def generate_random_numbers():
+    global A, B, product  # 전역 변수를 사용
+    while True:
+        A = random.randint(100, 9999)  # A는 100에서 9999 사이
+        B = random.randint(1000, 9999)  # B는 1000에서 9999 사이
         
-@bot.slash_command(name='인증_이메일', description='이메일을 이용해서 인증을 합니다.')
-async def email_verify(ctx, email: str):
-    if not await check_permissions(ctx):
-        return
-    await command_use_log(ctx, "인증_이메일")
-    db_path = os.path.join(os.getcwd(), "database", f"{ctx.guild.id}.db")
+        # A와 B가 서로 다른지 확인
+        if A != B:
+            product = A * B
+            if 100000 <= product <= 999999:  # 결과가 6자리 숫자인지 확인
+                break  # 조건을 만족하면 반복 종료
 
-    # 데이터베이스가 존재하지 않는 경우
-    if not os.path.exists(db_path):
-        await database_create(ctx)
-        await ctx.send("데이터베이스가 생성되었습니다.", ephemeral=True)
-        return
+class verify_Modal_Captcha(disnake.ui.Modal):
+    def __init__(self):
+        generate_random_numbers()
+        components = [
+            disnake.ui.TextInput(
+                label=f"{A} X {B} = ?",
+                placeholder="답을 입력해주세요(6자리)",
+                custom_id="text1",
+                style=TextInputStyle.short,
+                max_length=6
+            )
+        ]
+        super().__init__(title="인증번호", components=components)
 
-    # 데이터베이스 연결 및 설정 가져오기
-    aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await aiodb.execute("SELECT 인증역할, 인증채널 FROM 설정")
-    row = await aiocursor.fetchone()
-    await aiocursor.close()
-    await aiodb.close()
+    async def callback(self, ctx: disnake.ModalInteraction):
+        global key
 
-    role_id, channel_id = row if row else (None, None)
+        verify_code = product
+        key = ctx.text_values['text1']
 
-    if role_id:
-        role = ctx.guild.get_role(role_id)
-
-        if role:
-            # 인증 역할이 이미 부여된 경우
-            if role in ctx.author.roles:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="이미 인증된 상태입니다.")
-                await ctx.send(embed=embed, ephemeral=True)
-                return
-
-            if channel_id:
-                channel = ctx.guild.get_channel(channel_id)
-                if channel and channel == ctx.channel:
-                    # 인증 코드 생성 및 이메일 전송
-                    verifycode = random.randint(100000, 999999)
-                    send_email(email, verifycode)
-                    embed = disnake.Embed(color=0x00FF00)
-                    embed.add_field(name="이메일 인증", value=f"**{email}** 으로 인증번호를 전송했습니다.")
-                    await ctx.send(embed=embed, ephemeral=True)
-                    print(f'''인증번호({verifycode})가 "{email}"로 전송되었습니다.''')
-
-                    def check(m):
-                        return m.author == ctx.author and m.content == str(verifycode)
-
-                    try:
-                        msg = await bot.wait_for('message', check=check, timeout=180)
-                        await ctx.channel.purge(limit=1)
-                        await ctx.author.add_roles(role)
-                        embed = disnake.Embed(color=0x00FF00)
-                        embed.add_field(name="이메일 인증", value=f"{ctx.author.mention} 메일 인증이 완료되었습니다.")
-                        await ctx.send(embed=embed)
-                    except disnake.TimeoutError:
-                        embed = disnake.Embed(color=embederrorcolor)
-                        embed.add_field(name="❌ 오류", value="인증 시간이 초과되었습니다. 다시 시도해주세요.")
-                        await ctx.send(embed=embed)
-                else:
-                    embed = disnake.Embed(color=embederrorcolor)
-                    embed.add_field(name="❌ 오류", value="인증 채널에서만 인증 명령어를 사용할 수 있습니다.")
-                    await ctx.send(embed=embed, ephemeral=True)
-            else:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="인증채널이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
-                await ctx.send(embed=embed, ephemeral=True)
+        if str(verify_code) == key:
+            global global_role_captcha
+            role = global_role_captcha
+            await ctx.author.add_roles(role)
+            embed = disnake.Embed(color=embedsuccess)
+            embed.add_field(name="인증 완료", value=f"{ctx.author.mention} 인증이 완료되었습니다.")
+            await ctx.send(embed=embed)
         else:
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+            embed.add_field(name="❌ 오류", value="인증번호가 일치하지 않습니다.")
             await ctx.send(embed=embed, ephemeral=True)
-    else:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
-        await ctx.send(embed=embed, ephemeral=True)
 
-@bot.slash_command(name="인증", description="캡챠를 이용해서 인증을 합니다.")
-async def captcha_verify(ctx):
+@bot.slash_command(name="인증", description="문제를 풀어서 인증 합니다.")
+async def calculate_verify(ctx):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "인증")
@@ -1233,7 +1118,9 @@ async def captcha_verify(ctx):
         await aiodb.close()
     if role_id:
         role_id = role_id
+        global global_role_captcha
         role = ctx.guild.get_role(role_id)
+        global_role_captcha = role
         if role:
             # 인증 역할이 이미 부여된 경우
             if role in ctx.author.roles:
@@ -1245,49 +1132,258 @@ async def captcha_verify(ctx):
                 channel_id = channel_id
                 channel = ctx.guild.get_channel(channel_id)
                 if channel and channel == ctx.channel:
-                    # 인증 채널에서만 작동하는 코드 작성
-                    image_captcha = ImageCaptcha()
-                    captcha_text = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                    data = image_captcha.generate(captcha_text)
-                    image_path = 'captcha.png'  # 이미지 파일 경로
-                    with open(image_path, 'wb') as f:
-                        f.write(data.getvalue())  # BytesIO 객체를 파일로 저장
-                    embed = disnake.Embed(color=embedsuccess)
-                    embed.add_field(name="인증", value="코드를 입력해주세요(6 자리)")
-                    file = disnake.File(image_path, filename='captcha.png')
-                    embed.set_image(url="attachment://captcha.png")  # 이미지를 임베드에 첨부
-                    await ctx.send(embed=embed, file=file, ephemeral=True)
-                    def check(m):
-                        return m.author == ctx.author and m.content == captcha_text
-                    try:
-                        msg = await bot.wait_for('message', timeout=60.0, check=check)
-                        await ctx.channel.purge(limit=1)
-                    except TimeoutError:
-                        await ctx.channel.purge(limit=1)
-                        embed = disnake.Embed(color=embederrorcolor)
-                        embed.add_field(name="❌ 오류", value="시간이 초과되었습니다. 다시 시도해주세요.")
-                        await ctx.send(embed=embed)
-                    else:
-                        await ctx.author.add_roles(role)
-                        embed = disnake.Embed(color=embedsuccess)
-                        embed.add_field(name="인증 완료", value=f"{ctx.author.mention} 캡챠 인증이 완료되었습니다.")
-                        await ctx.send(embed=embed)
+                    pass
                 else:
                     embed = disnake.Embed(color=embederrorcolor)
                     embed.add_field(name="❌ 오류", value="인증 채널에서만 인증 명령어를 사용할 수 있습니다.")
-                    await ctx.send(embed=embed)
+                    await ctx.send(embed=embed, ephemeral=True)
+                    return
             else:
                 embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="인증채널을 선택해주세요.")
-                await ctx.send(embed=embed)
+                embed.add_field(name="❌ 오류", value="인증채널이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return
         else:
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="인증역할을 찾을 수 없습니다.")
-            await ctx.send(embed=embed)
+            embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+            await ctx.send(embed=embed, ephemeral=True)
+            return
     else:
         embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="인증역할을 선택해주세요.")
-        await ctx.send(embed=embed)
+        embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+    
+    await ctx.response.send_modal(modal=verify_Modal_Captcha())
+
+def send_sms_verify(phone_number):
+    global global_verify_code_sms
+    verify_code = random.randint(100000, 999999)
+    global_verify_code_sms = verify_code
+
+    text = f"인증번호: {verify_code}"
+                        
+    # 카카오 알림톡 메시지 전송
+    message = {
+        'messages': [{
+            'to': phone_number,
+            'from': sec.send_number,
+            'text': text,
+            'kakaoOptions': {
+                'pfId': sec.kakao_pfid,
+                'templateId': sec.kakao_templateid,
+                'variables': {
+                    '#{verify_code}': verify_code,
+                    '#{activity}': "스톤봇 인증"
+                }
+            }
+        }]
+    }
+    if coolsms_kakao.send_kakao(message):  # 카카오 알림톡 전송
+        print(f'''인증번호({verify_code})가 "{phone_number}"로 전송되었습니다.''')
+
+class verify_Modal_SMS(disnake.ui.Modal):
+    def __init__(self):
+        components = [
+            disnake.ui.TextInput(
+                label="인증번호",
+                placeholder="인증번호를 입력해주세요.",
+                custom_id="text1",
+                style=TextInputStyle.short,
+                max_length=6
+            )
+        ]
+        super().__init__(title="인증번호", components=components)
+        global global_phone_number_sms
+        phone_number = global_phone_number_sms
+        send_sms_verify(phone_number)
+
+    async def callback(self, ctx: disnake.ModalInteraction):
+        global key
+        global global_verify_code_sms
+
+        verify_code = global_verify_code_sms
+        key = ctx.text_values['text1']
+
+        if str(verify_code) == key:
+            global global_role_sms
+            role = global_role_sms
+            await ctx.author.add_roles(role)
+            embed = disnake.Embed(color=embedsuccess)
+            embed.add_field(name="문자 인증", value=f"{ctx.author.mention} 문자 인증이 완료되었습니다.")
+            await ctx.send(embed=embed)
+        else:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="인증번호가 일치하지 않습니다.")
+            await ctx.send(embed=embed, ephemeral=True)
+                    
+
+@bot.slash_command(name='인증_문자', description='문자를 이용해서 인증을 합니다.')
+async def sms_verify(ctx, phone_number: str):
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "인증_문자")
+    db_path = os.path.join(os.getcwd(), "database", f"{ctx.guild.id}.db")
+        
+    if not os.path.exists(db_path):
+        await database_create(ctx)
+    else:
+        try:
+            aiodb = await aiosqlite.connect(db_path)
+            aiocursor = await aiodb.execute("SELECT 인증역할, 인증채널 FROM 설정")
+            role_id, channel_id = await aiocursor.fetchone()
+            await aiocursor.close()
+            await aiodb.close()
+        except Exception as e:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="데이터베이스 오류가 발생했습니다. 관리자에게 문의하세요.")
+            await ctx.send(embed=embed, ephemeral=True)
+            return
+    if role_id:
+        global global_role_sms
+        role = ctx.guild.get_role(role_id)
+        global_role_sms = role
+        if role:
+            # 인증 역할이 이미 부여된 경우
+            if role in ctx.author.roles:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="이미 인증된 상태입니다.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return
+                
+            if channel_id:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel and channel == ctx.channel:
+                    pass
+                else:
+                    embed = disnake.Embed(color=embederrorcolor)
+                    embed.add_field(name="❌ 오류", value="인증 채널에서만 인증 명령어를 사용할 수 있습니다.")
+                    await ctx.send(embed=embed, ephemeral=True)
+                    return
+            else:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="인증채널이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return
+        else:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+            await ctx.send(embed=embed, ephemeral=True)
+            return
+    else:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+    
+    global global_phone_number_sms
+    global_phone_number_sms = phone_number
+    await ctx.response.send_modal(modal=verify_Modal_SMS())
+
+def send_email_verify(email):
+    # 인증 코드 생성 및 이메일 전송
+    global global_verify_code_email
+    verify_code = random.randint(100000, 999999)
+    global_verify_code_email = verify_code
+    send_email(email, verify_code)
+    print(f'''인증번호({verify_code})가 "{email}"로 전송되었습니다.''')
+
+class verify_Modal_EMAIL(disnake.ui.Modal):
+    def __init__(self):
+        components = [
+            disnake.ui.TextInput(
+                label="인증번호",
+                placeholder="인증번호를 입력해주세요.",
+                custom_id="text1",
+                style=TextInputStyle.short,
+                max_length=6
+            )
+        ]
+        super().__init__(title="인증번호", components=components)
+        global global_email
+        email = global_email
+        send_email_verify(email)
+
+    async def callback(self, ctx: disnake.ModalInteraction):
+        global key
+        global global_verify_code_email
+
+        verify_code = global_verify_code_email
+        key = ctx.text_values['text1']
+
+        if str(verify_code) == key:
+            global global_role_email
+            role = global_role_email
+            await ctx.author.add_roles(role)
+            embed = disnake.Embed(color=embedsuccess)
+            embed.add_field(name="이메일 인증", value=f"{ctx.author.mention} 메일 인증이 완료되었습니다.")
+            await ctx.send(embed=embed)
+        else:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="인증번호가 일치하지 않습니다.")
+            await ctx.send(embed=embed, ephemeral=True)
+
+@bot.slash_command(name='인증_이메일', description='이메일을 이용해서 인증을 합니다.')
+async def email_verify(ctx, email: str):
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "인증_이메일")
+    db_path = os.path.join(os.getcwd(), "database", f"{ctx.guild.id}.db")
+
+    # 데이터베이스가 존재하지 않는 경우
+    if not os.path.exists(db_path):
+        await database_create(ctx)
+
+    # 데이터베이스 연결 및 설정 가져오기
+    aiodb = await aiosqlite.connect(db_path)
+    aiocursor = await aiodb.execute("SELECT 인증역할, 인증채널 FROM 설정")
+    row = await aiocursor.fetchone()
+    await aiocursor.close()
+    await aiodb.close()
+
+    role_id, channel_id = row if row else (None, None)
+
+    if role_id:
+        role = ctx.guild.get_role(role_id)
+        global global_role_email
+        global_role_email = role
+
+        if role:
+            # 인증 역할이 이미 부여된 경우
+            if role in ctx.author.roles:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="이미 인증된 상태입니다.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return
+            
+            if channel_id:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel and channel == ctx.channel:
+                    pass
+                else:
+                    embed = disnake.Embed(color=embederrorcolor)
+                    embed.add_field(name="❌ 오류", value="인증 채널에서만 인증 명령어를 사용할 수 있습니다.")
+                    await ctx.send(embed=embed, ephemeral=True)
+                    return
+            else:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="인증채널이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return
+        else:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+            await ctx.send(embed=embed, ephemeral=True)
+            return
+    else:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="**인증역할**이 설정되지 않은 서버입니다.\n서버 관리자에게 문의하세요.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+    
+    global global_email
+    global_email = email
+    await ctx.response.send_modal(modal=verify_Modal_EMAIL())
 
 @bot.slash_command(name="지갑", description="자신이나 다른 유저의 지갑을 조회합니다.")
 async def wallet(ctx, member_id: str = None):
@@ -1408,6 +1504,41 @@ async def money_edit(ctx, member_id: str = commands.Param(name="유저"), choice
         embed.add_field(name="❌ 오류", value="개발자만 실행 가능한 명령어입니다.")
         await ctx.send(embed=embed, ephemeral=True)
 
+class Earn_Modal(disnake.ui.Modal):
+    def __init__(self):
+        num_A = random.randint(1, 11)
+        num_B = random.randint(2, 22)
+        global global_result
+        global_result = num_A + num_B
+        components = [
+            disnake.ui.TextInput(
+                label=f"{num_A} + {num_B} = ?",
+                placeholder="답을 입력해주세요(6자리)",
+                custom_id="text1",
+                style=TextInputStyle.short,
+                max_length=6
+            )
+        ]
+        super().__init__(title="일하기", components=components)
+
+    async def callback(self, ctx: disnake.ModalInteraction):
+        global key, global_result
+
+        key = ctx.text_values['text1']
+        random_add_money = random.randrange(10000, 100001)
+        random_add_money = int(round(random_add_money, -3))
+
+        if str(global_result) == key:
+            embed = disnake.Embed(color=embedsuccess)
+            await addmoney(ctx.author.id, random_add_money)
+            await add_exp(ctx.author.id, round(random_add_money / 300))
+            embed.add_field(name="정답", value=f"{ctx.author.mention}, {random_add_money:,}원이 지급되었습니다.")
+            await ctx.send(embed=embed)
+        else:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="틀렸습니다! 다음기회에 도전해주세요!")
+            await ctx.send(embed=embed, ephemeral=True)
+
 @bot.slash_command(name="일하기", description="간단한 문제풀이로 10,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
     if not await check_permissions(ctx):
@@ -1425,31 +1556,10 @@ async def earn_money(ctx):
         embed.add_field(name="쿨타임", value=f"{ctx.author.mention}, {remaining_time}초 후에 다시 시도해주세요.")
         await ctx.send(embed=embed)
         return
-    number_1 = random.randrange(2, 10)
-    number_2 = random.randrange(2, 10)
-    random_add_money = random.randrange(10000, 100001)
-    random_add_money = int(round(random_add_money, -3))
-
-    correct_answer = number_1 + number_2
-    await ctx.send(f"{number_1} + {number_2} =")
-
-    def check(msg):
-        return msg.author == ctx.author and msg.channel == ctx.channel and int(msg.content) == correct_answer
-    try:
-        msg = await bot.wait_for('message', timeout=15.0, check=check)
-    except asyncio.TimeoutError:
-        await ctx.send('시간이 초과되었습니다. 다음 기회에 도전해주세요.')
-    else:
-        if msg.content == str(correct_answer):
-            cooldowns[str(ctx.author.id)] = current_time
-            save_cooldowns(cooldowns)
-            embed = disnake.Embed(color=embedsuccess)
-            await addmoney(ctx.author.id, random_add_money)
-            await add_exp(ctx.author.id, round(random_add_money / 300))
-            embed.add_field(name="정답", value=f"{ctx.author.mention}, {random_add_money:,}원이 지급되었습니다.")
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send(f'틀렸습니다! 정답은 {correct_answer}입니다.')
+    cooldowns[str(ctx.author.id)] = current_time
+    save_cooldowns(cooldowns)
+    
+    await ctx.response.send_modal(modal=Earn_Modal())
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx: disnake.CommandInteraction):
@@ -2889,27 +2999,32 @@ async def view_update2(view: CoinView1):
     view.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await view.update_message()
 
-@bot.slash_command(name="가상화폐관리", description="가상화폐을 추가하거나 삭제할 수 있습니다. [개발자전용]")
+@bot.slash_command(name="가상화폐관리", description="가상화폐를 추가하거나 삭제할 수 있습니다. [개발자전용]")
 async def coin_management(ctx, _name: str, choice: str = commands.Param(name="선택", choices=["추가", "삭제"]), _price: float = commands.Param(name="가격", default=None)):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가상화폐관리")
+    
     if ctx.author.id == developer:
-        if choice == "추가":
-            await addcoin(_name, _price)
-            price = int(_price)
-            embed = disnake.Embed(color=embedsuccess)
-            embed.add_field(name="✅ 성공", value=f"{_name} 가상화폐을 {price:,} 가격으로 추가하였습니다.")
-            await ctx.send(embed=embed)
-        elif choice == "삭제":
-            await removecoin(_name)
+        try:
+            if choice == "추가":
+                await addcoin(_name, _price)
+                embed = disnake.Embed(color=embedsuccess)
+                embed.add_field(name="✅ 성공", value=f"{_name} 가상화폐를 {_price:,} 가격으로 추가하였습니다.")
+                await ctx.response.send_message(embed=embed)
+            elif choice == "삭제":
+                await removecoin(_name)
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="🗑️ 삭제", value=f"{_name} 가상화폐를 삭제하였습니다.")
+                await ctx.response.send_message(embed=embed)
+        except Exception as e:
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="🗑️ 삭제", value=f"{_name} 가상화폐을 삭제하였습니다.")
-            await ctx.send(embed=embed)
+            embed.add_field(name="❌ 오류", value=f"오류가 발생했습니다: {str(e)}")
+            await ctx.response.send_message(embed=embed, ephemeral=True)
     else:
         embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="개발자만 실행가능한 명령어입니다.")
-        await ctx.send(embed=embed, ephemeral=True)
+        embed.add_field(name="❌ 오류", value="개발자만 실행 가능한 명령어입니다.")
+        await ctx.response.send_message(embed=embed, ephemeral=True)
 
 class CoinView(disnake.ui.View):
     def __init__(self, coins, per_page=5):
@@ -2930,31 +3045,29 @@ class CoinView(disnake.ui.View):
             self.add_item(NextButton())
 
     async def update_message(self, ctx=None):
-        embed = await self.create_embed()  # 비동기 함수 호출
+        embed = await self.create_embed()
         self.update_buttons()
         if ctx:
             await ctx.followup.edit_message(embed=embed, view=self)
         elif self.message:
             await self.message.edit(embed=embed, view=self)
 
-    async def create_embed(self):  # 비동기 함수로 변경
-        embed = disnake.Embed(title=f"가상화폐 목록", color=0x00ff00)
+    async def create_embed(self):  
+        embed = disnake.Embed(title="가상화폐 목록", color=0x00ff00)
         start = self.current_page * self.per_page
         end = start + self.per_page
-        total_value = 0  # 총 가격 초기화
+        total_value = 0  
 
         for name, count in self.coins[start:end]:
             coin_price = next((price for coin_name, price in await getcoin() if coin_name == name), None)
             if coin_price is None:
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
-                total_value += coin_price * count  # 총 가격 계산
+                total_value += coin_price * count
                 embed.add_field(name=name, value=f"가격: {coin_price:,} 원 | 보유 수량: {count:,}개", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
-
         return embed
-
 
 class PreviousButton(disnake.ui.Button):
     def __init__(self):
@@ -2966,7 +3079,6 @@ class PreviousButton(disnake.ui.Button):
             view.current_page -= 1
             await view.update_message(ctx)
 
-
 class NextButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="다음", style=disnake.ButtonStyle.primary)
@@ -2976,7 +3088,6 @@ class NextButton(disnake.ui.Button):
         if view.current_page < view.max_page:
             view.current_page += 1
             await view.update_message(ctx)
-
 
 @bot.slash_command(name="코인지갑", description="보유중인 가상화폐를 확인합니다.")
 async def coin_wallet(ctx: disnake.CommandInteraction):
@@ -3548,17 +3659,25 @@ async def slowmode(ctx, time: int = commands.Param(name="시간", description="�
 async def clear(ctx, num: int = commands.Param(name="개수")):
     if not await check_permissions(ctx):
         return
+
     await command_use_log(ctx, "청소")
+    await ctx.response.defer()  # 응답 지연
+
     if ctx.author.guild_permissions.manage_messages:
         num = int(num)
-        await ctx.channel.purge(limit=num)
-        embed = disnake.Embed(color=embedsuccess)
-        embed.add_field(name=f"{num}개의 메시지를 지웠습니다.", value="")
-        await ctx.send(embed=embed)
+        try:
+            deleted_messages = await ctx.channel.purge(limit=num)
+            embed = disnake.Embed(color=embedsuccess)
+            embed.add_field(name=f"{len(deleted_messages)}개의 메시지를 지웠습니다.", value="")
+            await ctx.send(embed=embed)  # 원래 응답 편집
+        except Exception as e:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="메시지 삭제에 실패했습니다.")
+            await ctx.send(embed=embed)  # 원래 응답 편집
     else:
-        embed=disnake.Embed(color=embederrorcolor)
+        embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="관리자만 실행가능한 명령어입니다.")
-        await ctx.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)  # 원래 응답 편집
 
 @bot.slash_command(name="공지", description="서버에 공지를 전송합니다. [관리자전용]")
 async def notification(ctx, *, content: str = commands.Param(name="내용")):
@@ -4368,10 +4487,10 @@ async def check_experience():
             if dm_setting != 1:  # DM 수신이 비활성화된 경우 메시지를 보내지 않음
                 if user:
                     channel = await user.create_dm()
-                    adjusted_level = adjusted_level * 10000
+                    reward = adjusted_level * 10000
                     embed = disnake.Embed(
                         title="레벨 업! 🎉",
-                        description=f'축하합니다! 레벨이 **{adjusted_level}**로 올랐습니다! 보상으로 **{adjusted_level}원**이 지급되었습니다.',
+                        description=f'축하합니다! 레벨이 **{adjusted_level}**로 올랐습니다! 보상으로 **{reward}원**이 지급되었습니다.',
                         color=0x00ff00
                     )
                     await channel.send(embed=embed)
