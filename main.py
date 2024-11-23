@@ -5,11 +5,11 @@ from gtts import gTTS
 from def_list import *
 import yt_dlp as youtube_dl
 from googletrans import Translator
-from disnake import ButtonStyle, FFmpegPCMAudio
-from disnake import TextInputStyle
+from disnake import FFmpegPCMAudio, TextInputStyle
+from disnake.ui import Button, View
+from disnake.ext import commands, tasks
 from collections import defaultdict
 from importlib.metadata import version
-from disnake.ext import commands, tasks
 from permissions import get_permissions
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -1377,7 +1377,6 @@ async def wallet(ctx, member_id: str = None):
         
     await command_use_log(ctx, "지갑")
     
-    await ctx.response.defer()
 
     user = ctx.author if member_id is None else await bot.fetch_user(member_id)
     if user is None:
@@ -3867,7 +3866,7 @@ async def inquire(ctx):
     await ctx.send(embed=embed)
 
 @bot.slash_command(name="문의답장", description="유저에게 답변을 보냅니다. [개발자전용]")
-async def inquire_answer(ctx, member: str, message: str, inquiry_onoff: str = commands.Param(name="inquiry_onoff", choices=["종료"], default=None)):
+async def inquire_answer(ctx, member: str, message: str):
     if not await check_permissions(ctx):
         return
 
@@ -4123,77 +4122,134 @@ async def check_user_in_db(user_id):
             row = await cursor.fetchone()
             return row is not None
 
-GUILD_ID = int(1148091280358916158) # 문의를 처리할 길드 ID
-CATEGORY_ID = int(1309426581290090497) # 문의 채널을 생성할 카테고리 ID
-
-class InquiryEndView(disnake.ui.View):
+class inquiry_Modal(disnake.ui.Modal):
     def __init__(self):
-        super().__init__(timeout=None)
+        components = [
+            disnake.ui.TextInput(
+                label=f"유저",
+                placeholder="아이디를 입력해주세요.",
+                custom_id="text1",
+                style=TextInputStyle.short
+            ),
+            disnake.ui.TextInput(
+                label=f"답장 내용",
+                placeholder="내용을 입력해주세요.",
+                custom_id="text2",
+                style=TextInputStyle.short
+            )
+        ]
+        super().__init__(title="문의 답장", components=components)
 
-    @disnake.ui.button(label="문의 종료", style=disnake.ButtonStyle.red)
-    async def end_inquiry(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        channel = interaction.channel
+    async def callback(self, ctx: disnake.ModalInteraction):
+        global key, key1
 
-        overwrites = channel.overwrites
-        for target in overwrites.keys():
-            if isinstance(target, disnake.Member):
-                overwrites[target] = disnake.PermissionOverwrite(view_channel=False)
-        await channel.edit(overwrites=overwrites)
-        await interaction.response.send_message("문의가 종료되었습니다. 채널을 유지하시겠습니까?", ephemeral=True)
+        key = ctx.text_values['text1']
+        key1 = ctx.text_values['text2']
+        
+        # 개발자 ID 확인
+        if ctx.author.id != developer:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="이 명령어는 개발자만 사용할 수 있습니다.")
+            await ctx.edit_original_response(embed=embed)
+            return
+        
+        # User 객체 생성
+        try:
+            user = await bot.fetch_user(key)  # 유저 정보 가져오기
+            await user.send(f"{ctx.author.mention} : {key1}")  # DM 전송
 
-        view = ChannelDeleteView()
-        await channel.send("채널을 삭제하시겠습니까?", view=view)
+            embed = disnake.Embed(title="답장내용", color=embedsuccess)
+            embed.add_field(name="관리자", value=f"{ctx.author.mention}")
+            embed.add_field(name="내용", value=f"{key1}")
+            await ctx.send(embed=embed)
 
-class ChannelDeleteView(disnake.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @disnake.ui.button(label="예", style=disnake.ButtonStyle.green)
-    async def delete_channel(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        await interaction.channel.delete()
-
-    @disnake.ui.button(label="아니오", style=disnake.ButtonStyle.grey)
-    async def keep_channel(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        await interaction.response.send_message("채널이 유지되었습니다.", ephemeral=True)
+        except disnake.Forbidden:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value=f"{user.mention}님에게 메시지를 보낼 수 없습니다. DM을 허용하지 않았습니다.")
+            await ctx.edit_original_response(embed=embed)
+        except disnake.HTTPException:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="메시지 전송 중 오류가 발생했습니다.")
+            await ctx.edit_original_response(embed=embed)
+        except Exception as e:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value=f"오류: {str(e)}")
+            await ctx.edit_original_response(embed=embed)
 
 @bot.event
 async def on_message(message):
+    # 봇이 보낸 메시지는 무시
     if message.author == bot.user or message.author.bot:
         return
-    
+
+    user_id = str(message.author.id)
+
+    # 데이터베이스에서 사용자 데이터 확인
+    user_exists = await check_user_in_db(user_id)
+
+    if user_exists:
+        await add_exp(user_id, 5)
+
+    # DM 채널에서의 처리
     if isinstance(message.channel, disnake.DMChannel):
-        guild = await bot.fetch_guild(GUILD_ID)
-        if not guild:
-            await message.author.send("현재 연결된 서버를 찾을 수 없습니다.")
-            return
+        await handle_dm_message(message)
 
-        category = await guild.fetch_channel(CATEGORY_ID)
-        if not category or not isinstance(category, disnake.CategoryChannel):
-            await message.author.send("문의 카테고리를 찾을 수 없습니다.")
-            return
+async def handle_dm_message(message):
+    user = f"{message.author.display_name}({message.author.name})"
+    avatar_url = message.author.avatar.url if message.author.avatar else None
 
-        channel_name = f"문의-{message.author.name}"
-        existing_channel = disnake.utils.get(category.channels, name=channel_name)
+    await message.add_reaction("✅")
+    print("문의가 접수되었습니다.")
 
-        if existing_channel:
-            await message.author.send(f"이미 생성된 문의 채널이 있습니다: {existing_channel.mention}")
-            return
+    # 첨부 파일 처리
+    await handle_attachments(message)
 
-        overwrites = {
-            guild.default_role: disnake.PermissionOverwrite(view_channel=False),
-            message.author: disnake.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
+    # 임베드 메시지 생성
+    dm_embed = disnake.Embed(title="새로운 문의", color=embedcolor)
+    dm_embed.add_field(name="사용자", value=user, inline=False)
+    dm_embed.add_field(name="아이디", value=message.author.id, inline=False)
+    dm_embed.add_field(name="내용", value=str(message.content), inline=False)
+    if avatar_url:
+        dm_embed.set_thumbnail(url=avatar_url)
 
-        channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
-        await message.author.send(f"문의 채널이 생성되었습니다: {channel.mention}")
+    # 문의에 답장할 수 있는 버튼 생성
+    reply_button = Button(label="답장하기", style=disnake.ButtonStyle.green)
 
-        embed = disnake.Embed(title="문의 접수", description="문의 내용을 확인해주세요.", color=disnake.Color.blue())
-        embed.add_field(name="문의 내용", value=message.content, inline=False)
-        if message.attachments:
-            embed.set_image(url=message.attachments[0].url)
+    async def reply_button_callback(ctx):
+        await ctx.response.send_modal(modal=inquiry_Modal())
 
-        view = InquiryEndView()
-        await channel.send(content=f"{message.author.mention}", embed=embed, view=view)
+    reply_button.callback = reply_button_callback
+
+    # 버튼을 포함하는 뷰 생성
+    view = View()
+    view.add_item(reply_button)
+
+    # 특정 채널로 전송
+    await send_to_support_channel(dm_embed, view)
+
+async def send_to_support_channel(embed, view):
+    channel_id = int(sec.support_ch_id)
+    channel = bot.get_channel(channel_id)
+
+    if channel is None:
+        print(f"채널 ID {channel_id}을(를) 찾을 수 없습니다.")
+        return
+    try:
+        await channel.send(embed=embed, view=view)
+        print(f"메시지가 채널 ID {channel_id}로 전송되었습니다.")
+    except Exception as e:
+        print(f"메시지를 채널로 전송하는 중 오류 발생: {e}")
+
+async def handle_attachments(message):
+    if message.attachments:
+        for attachment in message.attachments:
+            try:
+                # 파일 다운로드 및 전송
+                file = await attachment.to_file()
+                await send_to_support_channel(file=file)  # 파일도 채널로 전송
+                print(f"파일 {attachment.filename}이(가) 채널 ID {sec.support_ch_id}로 전송되었습니다.")
+            except Exception as e:
+                print(f"파일을 채널로 전송하는 중 오류 발생: {e}")
 
 def get_uptime():
     """업타임을 계산하는 함수."""
