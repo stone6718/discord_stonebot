@@ -1,0 +1,148 @@
+body {
+    background-color: #232428;
+    color: white;
+    margin: 0;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+header {
+    display: flex;
+    height: 3rem;
+}
+
+button {
+    border: 0;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    margin: 4rem;
+    gap: 2rem;
+}
+
+.icon {
+    width: 4rem;
+    height: 4rem;
+    margin: 0.5rem;
+    margin-right: 2rem;
+}
+
+.menu {
+    cursor: pointer;
+    background-color: #232428;
+    width: 8rem;
+    font-size: 1.1rem;
+    font-weight: 550;
+    color: white;
+}
+
+.menu:hover {
+    background-color: #313338;
+}
+
+.selected {
+    background-color: #2B2D31;
+}
+
+.account-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 12px;
+    margin-top: 0.5rem;
+}
+
+.account {
+    font-weight: 450;
+    font-size: 1rem;
+    line-height: 1rem;
+    margin-top: 1rem;
+}
+
+.account-container {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+    margin-right: 0.5rem;
+}
+
+.logout-button {
+    cursor: pointer;
+    background-color: #2B2D31;
+    color: white;
+    width: 6rem;
+    height: 2rem;
+    font-weight: 550;
+    font-size: 1rem;
+    border-radius: 12px;
+    margin-top: 0.5rem;
+    margin-left: 1rem;
+}
+
+.logout-button:hover {
+    background-color: #313338;
+}
+
+.guild-container {
+    display: flex;
+    gap: 1rem;
+}
+
+.guild-icon {
+    width: 4rem;
+    height: 4rem;
+    background-color: #2B2D31;
+    border-radius: 24px;
+}
+
+.guild-name {
+    display: block;
+    font-weight: 650;
+    font-size: 1.6rem;
+    line-height: 1.6rem;
+    margin-top: 1.2rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: center;
+}
+
+.command-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+    align-items: center;
+}
+
+.command-title {
+    font-size: 1rem;
+    font-weight: 550;
+}
+
+.container {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+}
+
+.toggle {
+    cursor: pointer;
+    color: black;
+    font-weight: 550;
+    width: 7rem;
+    height: 1.8rem;
+    border-radius: 4px;
+}
+
+.enabled {
+    background-color: #44FF44;
+}
+
+.disabled {
+    background-color: #FF4444;
+}

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>스톤 관리자 패널</title>
+
+        <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+        <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
+        <link rel="stylesheet" href="../../static/css/guild_panel.css" />
+        <script src="../../static/js/guild_panel.js"></script>
+    </head>
+
+    <body>
+        <header>
+            <img class="icon" src="../../static/image/home1.jpg">
+
+            <button class="menu" onclick="navigate('users')">
+                유저 관리
+            </button>
+
+            <button class="menu" onclick="navigate('commands')">
+                명령어 관리
+            </button>
+
+            <button class="menu selected">
+                개발자 패널
+            </button>
+
+            <div class="account-container">
+                <img class="account-avatar" src="https://cdn.discordapp.com/avatars/{{ user_id }}/{{ avatar }}.png">
+                <span class="account">{{ display_name }}</span>
+                <button class="logout-button" onclick="logout()">로그아웃</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="guild-container">
+                {% if guild.icon %}
+                    <img class="guild-icon" src="{{ guild.icon.url }}">
+                {% else %}
+                    <svg class="guild-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4.5 9.75a6 6 0 0 1 11.573-2.226 3.75 3.75 0 0 1 4.133 4.303A4.5 4.5 0 0 1 18 20.25H6.75a5.25 5.25 0 0 1-2.23-10.004 6.072 6.072 0 0 1-.02-.496Z" clip-rule="evenodd" />
+                    </svg>
+                {% endif %}
+
+                <span class="guild-name">{{ guild.name }}</span>
+
+                <div class="remove-container">
+                    <span class="remove-title">서버 데이터베이스 삭제</span>
+                    <button class="button remove" onclick="removeGuild()">
+                        삭제하기
+                    </button>
+                </div>
+            </div>
+
+            <div class="container">
+                <div class="item-keys">
+                    <span>
+                        닉네임
+                    </span>
+                    <span class="two-blocks">
+                        ID
+                    </span>
+                    <span>
+                        잔액
+                    </span>
+                    <span>
+                        잔액 추가
+                    </span>
+                    <span>
+                        잔액 설정
+                    </span>
+                    <span>
+                        이용제한
+                    </span>
+                    <span>
+                        데이터 삭제
+                    </span>
+                </div>
+                <ul>
+                    {% for user in users %}
+                    <li>
+                        <span>
+                            {% if user.display_name is none or user.username is none %}
+                                (없음)
+                            {% else %}
+                                {{ user.display_name }} ({{ user.username }})
+                            {% endif %}
+                        </span>
+                        <span class="two-blocks">
+                            {{ user.id }}
+                        </span>
+                        <span>
+                            {{ user.money }} 원
+                        </span>
+                        <button class="button" onclick="add('{{ user.id }}')">
+                            추가하기
+                        </button>
+                        <button class="button" onclick="set('{{ user.id }}')">
+                            설정하기
+                        </button>
+                        {% if user.disabled == 0 %}
+                        <button class="button enabled" onclick="disable('{{ user.id }}', true)">
+                            정상
+                        </button>
+                        {% else %}
+                        <button class="button disabled" onclick="disable('{{ user.id }}', false)">
+                            차단
+                        </button>
+                        {% endif %}
+                        <button class="button remove" onclick="remove('{{ user.id }}')">
+                            삭제하기
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </main>
+    </body>
+</html>

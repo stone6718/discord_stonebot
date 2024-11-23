@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>스톤 관리자 패널</title>
+
+        <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+        <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
+        <link rel="stylesheet" href="../../static/css/guild_commands.css" />
+        <script src="../../static/js/guild_commands.js"></script>
+    </head>
+
+    <body>
+        <header>
+            <img class="icon" src="../../static/home1.jpg">
+
+            <button class="menu" onclick="navigate('users')">
+                유저 관리
+            </button>
+
+            <button class="menu selected">
+                명령어 관리
+            </button>
+
+            {% if is_admin %}
+            <button class="menu" onclick="navigate('panel')">
+                개발자 패널
+            </button>
+            {% endif %}
+
+            <div class="account-container">
+                <img class="account-avatar" src="https://cdn.discordapp.com/avatars/{{ user_id }}/{{ avatar }}.png">
+                <span class="account">{{ display_name }}</span>
+                <button class="logout-button" onclick="logout()">로그아웃</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="guild-container">
+                {% if guild.icon %}
+                    <img class="guild-icon" src="{{ guild.icon.url }}">
+                {% else %}
+                    <svg class="guild-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4.5 9.75a6 6 0 0 1 11.573-2.226 3.75 3.75 0 0 1 4.133 4.303A4.5 4.5 0 0 1 18 20.25H6.75a5.25 5.25 0 0 1-2.23-10.004 6.072 6.072 0 0 1-.02-.496Z" clip-rule="evenodd" />
+                    </svg>
+                {% endif %}
+
+                <span class="guild-name">{{ guild.name }}</span>
+            </div>
+            <h3>기능 관리</h3>
+            <div class="container">
+                <div class="command-container">
+                    <span class="command-title">음악 기능</span>
+                    {% if functions[0] == 1 %}
+                    <button class="toggle enabled" onclick="toggle('music', false)">
+                        활성화
+                    </button>
+                    {% else %}
+                    <button class="toggle disabled" onclick="toggle('music', true)">
+                        비활성화
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="command-container">
+                    <span class="command-title">경제 기능</span>
+                    {% if functions[1] == 1 %}
+                    <button class="toggle enabled" onclick="toggle('economy', false)">
+                        활성화
+                    </button>
+                    {% else %}
+                    <button class="toggle disabled" onclick="toggle('economy', true)">
+                        비활성화
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="command-container">
+                    <span class="command-title">관리 기능</span>
+                    {% if functions[2] == 1 %}
+                    <button class="toggle enabled" onclick="toggle('manage', false)">
+                        활성화
+                    </button>
+                    {% else %}
+                    <button class="toggle disabled" onclick="toggle('manage', true)">
+                        비활성화
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="command-container">
+                    <span class="command-title">유틸리티 기능</span>
+                    {% if functions[3] == 1 %}
+                    <button class="toggle enabled" onclick="toggle('utility', false)">
+                        활성화
+                    </button>
+                    {% else %}
+                    <button class="toggle disabled" onclick="toggle('utility', true)">
+                        비활성화
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            <h3>명령어 관리</h3>
+            <div class="container">
+                <div class="command-row">
+                    <div class="command-container">
+                        <span class="command-title">주식명령어</span>
+                        {% if functions[4] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('economy_stock', false)">
+                            활성화
+                        </button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('economy_stock', true)">
+                            비활성화
+                        </button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">코인명령어</span>
+                        {% if functions[5] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('economy_coin', false)">
+                            활성화
+                        </button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('economy_coin', true)">
+                            비활성화
+                        </button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">게임명령어</span>
+                        {% if functions[6] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('economy_game', false)">
+                            활성화
+                        </button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('economy_game', true)">
+                            비활성화
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="command-row">
+                    <div class="command-container">
+                        <span class="command-title">인증</span>
+                        {% if functions[7] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('manage_verify', false)">활성화</button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('manage_verify', true)">비활성화</button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">인증_문자</span>
+                        {% if functions[8] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('manage_verify_sms', false)">활성화</button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('manage_verify_sms', true)">비활성화</button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">인증_이메일</span>
+                        {% if functions[9] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('manage_verify_email', false)">활성화</button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('manage_verify_email', true)">비활성화</button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">채팅관리명령어</span>
+                        {% if functions[10] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('manage_chat', false)">활성화</button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('manage_chat', true)">비활성화</button>
+                        {% endif %}
+                    </div>
+                    <br>
+                    <div class="command-container">
+                        <span class="command-title">유저관리명령어</span>
+                        {% if functions[11] == 1 %}
+                        <button class="toggle enabled" onclick="toggle('manage_user', false)">활성화</button>
+                        {% else %}
+                        <button class="toggle disabled" onclick="toggle('manage_user', true)">비활성화</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </body>
+</html>

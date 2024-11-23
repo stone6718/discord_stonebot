@@ -1,0 +1,198 @@
+body {
+    background-color: #232323;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+header {
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: fixed; /* 헤더를 고정 */
+    background-color: rgba(0, 0, 0, 0.0); /* 배경색 설정 (투명도 포함) */
+    color: white; /* 글자색 설정 */
+    z-index: 1000; /* 다른 요소들 위에 위치하게 설정 */
+    margin-top: 5px;
+    margin-left: 20px;
+    width: 100%; /* 전체 폭을 사용 */
+}
+
+hr {
+    border: none; /* 기본 테두리 제거 */
+    height: 2px; /* 선의 두께 */
+    background-color: rgb(255, 255, 255); /* 선의 색상 */
+    margin: 0; /* 위아래 여백을 0으로 설정 */
+    width: 98%; /* 선의 길이를 98%로 설정 */
+    position: fixed; /* 고정 위치 설정 */
+    top: 80px; /* 상단에서의 위치 조정 (헤더 아래) */
+    left: 1%; /* 왼쪽 위치 조정 (가운데 정렬을 위한 보정) */
+    z-index: 999; /* 다른 요소들 위에 위치하게 설정 */
+}
+
+.logo-container {
+    display: flex;
+    align-items: center;
+}
+
+.logo-container h1 {
+    font-size: 24px;
+    color: #fff;
+    margin: 0;
+}
+
+.header-container {
+    display: flex; /* 플렉스 박스 사용 */
+    justify-content: space-between; /* 양 끝에 정렬 */
+    align-items: center; /* 수직 중앙 정렬 */
+}
+
+nav ul {
+    list-style-type: none; /* 기본 리스트 스타일 제거 */
+    margin: 0; /* 마진 제거 */
+    padding: 0; /* 패딩 제거 */
+    display: flex; /* 리스트를 플렉스 컨테이너로 설정 */
+    margin-right: 80px; /* 오른쪽 여백 추가 */
+}
+
+nav ul li {
+    margin: 0 15px; /* 리스트 아이템 간격 설정 */
+}
+
+nav ul li a {
+    color: white; /* 링크 색상 설정 */
+    text-decoration: none; /* 밑줄 제거 */
+}
+
+nav ul li a:hover {
+    text-decoration: underline; /* 마우스 오버 시 밑줄 추가 */
+}
+
+/* 내용 스타일 */
+#texts {
+    display: flex;
+    margin-left: 3%;
+    height: calc(100dvh - 94px - 80px);
+}
+
+.text {
+    color: #fff;
+}
+.text_1 {
+    font-size: 30px;
+}
+.text_2 {
+    color: #555;
+    font-size: 18px;
+}
+.text_3 {
+    font-size: 16px;
+}
+
+button {
+    font-size: 18px;
+    background-color: rgb(225, 0, 255);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    padding: 5px 15px; /* 버튼 내부 여백을 줄입니다 */
+    margin: 5px; /* 버튼 간 간격을 5px로 설정 */
+    transition: box-shadow 0.3s ease; /* 부드러운 효과를 위해 transition 추가 */
+}
+
+button:hover {
+    box-shadow: 0 0 10px rgb(225, 0, 255), 0 0 20px rgb(225, 0, 255), 0 0 30px rgb(225, 0, 255); /* 네온 효과 */
+}
+
+.button_1 {
+    font-size: 18px;
+    background-color: rgb(0, 100, 255);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    padding: 5px 15px; /* 버튼 내부 여백을 줄입니다 */
+    transition: box-shadow 0.3s ease; /* 부드러운 효과를 위해 transition 추가 */
+}
+
+.button_1:hover {
+    box-shadow: 0 0 10px rgb(0, 100, 255), 0 0 20px rgb(0, 100, 255), 0 0 30px rgb(0, 100, 255); /* 네온 효과 */
+}
+
+section {
+    height: 100%; /* 전체 화면 높이 */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* 콘텐츠 수직 중앙 정렬 */
+}
+
+#command-list {
+    margin-top: 20%; /* 위쪽 여백 제거 */
+    background-color: #2b2b2b;
+    color: #fff;
+    height: 100vh; /* 전체 화면 높이로 설정 */
+    overflow-y: auto; /* 세로 스크롤 추가 */
+}
+
+.scroll-down {
+    display: flex;
+    justify-content: center;
+    cursor: pointer;
+    margin-top: 21%;
+}
+
+.arrow {
+    width: 30px;
+    height: 30px;
+    border: solid white;
+    border-width: 0 3px 3px 0;
+    display: inline-block;
+    padding: 3px;
+    transform: rotate(45deg);
+    transition: transform 0.3s ease;
+}
+
+.arrow:hover {
+    transform: rotate(135deg); /* 마우스 오버 시 화살표 회전 */
+}
+
+.command-container {
+    display: flex; /* Flexbox 사용 */
+    justify-content: center; /* 중앙 정렬 */
+    width: 100vw; /* 전체 너비 사용 */
+    font-size: 12px;
+}
+
+.command-container ul {
+    padding: 0; /* 패딩 제거 */
+    list-style-type: none; /* 기본 리스트 스타일 제거 */
+}
+
+/* 푸터 스타일 */
+footer {
+    color: #fff;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+}
+
+.left {
+    margin-left: 10px;
+}
+
+.right {
+    text-align: right;
+    margin-right: 10px;
+}
+
+a {
+    text-decoration: none;
+    color: #fff;
+}
