@@ -293,7 +293,6 @@ def generate_image(prompt):
 async def get_user_credit(user_id):
     # 데이터베이스 경로 설정
     db_path = os.path.join('system_database', 'membership.db')
-    
     try:
         # 데이터베이스 연결
         async with aiosqlite.connect(db_path) as conn:
@@ -302,6 +301,7 @@ async def get_user_credit(user_id):
                 row = await cursor.fetchone()
                 # 결과가 있으면 크레딧 반환, 없으면 0 반환
                 return row[0] if row else 0
+            await conn.commit()
     except aiosqlite.Error as e:
         # 오류 발생 시 메시지 출력
         print(f"Database error: {e}")
@@ -860,17 +860,20 @@ async def addmoney(_id, _amount):
         await aiocursor.execute("insert into user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) values (?, ?, ?, ?, ?, ?, ?, ?)", (_id, _amount, 0, 0, 0, 0, 0, 0))
     else:
         await aiocursor.execute("update user set money = ? where id = ?", (dat[0][1] + _amount, _id))
-    await economy_aiodb.commit()
     await aiocursor.close()
 
-async def getmoney(_id):
+async def getmoney(user_id):
     db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.execute("select * from user where id=?", (_id, ))
-    dat = await aiocursor.fetchall()
-    await aiocursor.close()
-    if dat == False: return 0
-    return dat[0][1]
+    async with aiosqlite.connect(db_path) as economy_aiodb:
+        async with economy_aiodb.execute("SELECT * FROM user WHERE id=?", (user_id,)) as aiocursor:
+            dat = await aiocursor.fetchall()  # 모든 데이터 가져오기
+    await economy_aiodb.close()
+
+    if not dat or len(dat) < 1 or len(dat[0]) < 2:
+        print(f"사용자 {user_id}의 데이터가 없습니다.")
+        return 0  # 기본값으로 0 반환
+
+    return dat[0][1]  # 현재 보유 금액 반환
 
 async def removemoney(_id, _amount):
     db_path = os.path.join('system_database', 'economy.db')
@@ -962,49 +965,40 @@ async def dm_on_off(user):
                 return 0  # 변환 실패 시 기본값으로 0을 반환
 
             return dm_on_off  # DM 설정 값을 반환
+    await economy_aiodb.commit()
+    await economy_aiodb.close()
+
+# 상수 정의
+DB_PATH = os.path.join('system_database', 'economy.db')
+ERROR_COLOR = 0xff0000  # 오류 색상 예시
 
 async def member_status(ctx):
+    await ctx.response.defer()
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (ctx.author.id,)) as aiocursor:
             dbdata = await aiocursor.fetchone()
+        await economy_aiodb.commit()
+        await economy_aiodb.close()
 
-    if dbdata is None:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value=f"{ctx.author.mention}\n가입되지 않은 유저입니다.")
-        await ctx.followup.send(embed=embed, ephemeral=True)  # ctx.followup.send() 사용
-        return False  # 상태 확인 실패 시 False 반환
-    else:
+    # dbdata가 None일 경우
+        if dbdata is None:
+            embed = disnake.Embed(color=ERROR_COLOR)
+            embed.add_field(name="❌ 오류", value=f"{ctx.author.mention}\n가입되지 않은 유저입니다.")
+            await ctx.followup.send(embed=embed, ephemeral=True)
+            return False  # 상태를 반환하여 호출한 곳에서 처리 가능
+
+        # tos 값이 1일 경우
         tos = int(dbdata[0])
         if tos == 1:
-            embed = disnake.Embed(color=embederrorcolor)
+            embed = disnake.Embed(color=ERROR_COLOR)
             embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.")
-            await ctx.followup.send(embed=embed, ephemeral=True)  # ctx.followup.send() 사용
-            return False  # 상태 확인 실패 시 False 반환
-
-    return True  # 상태 확인 성공 시 True 반환
-
-async def member_status_etc(ctx):
-    db_path = os.path.join('system_database', 'economy.db')
-    async with aiosqlite.connect(db_path) as economy_aiodb:
-        async with economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (ctx.author.id,)) as aiocursor:
-            dbdata = await aiocursor.fetchone()
-
-    # 데이터가 없으면 패스
-    if dbdata is None:
-        return  # 데이터가 없을 경우 아무 동작도 하지 않음
-
-    tos = int(dbdata[0])
-    if tos == 1:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="이용제한된 유저입니다.")
-        await ctx.followup.send(embed=embed, ephemeral=True)  # ctx.followup.send() 사용
-        return False  # 상태 확인 실패 시 False 반환
+            await ctx.followup.send(embed=embed, ephemeral=True)
+            return False  # 상태를 반환하여 호출한 곳에서 처리 가능
 
     return True  # 상태 확인 성공 시 True 반환
         
 async def membership(ctx):
-    await member_status(ctx)
     db_path = os.path.join('system_database', 'membership.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.execute("SELECT class FROM user WHERE id=?", (ctx.author.id,))
@@ -1012,8 +1006,10 @@ async def membership(ctx):
     
     if dbdata is None:
         # 데이터가 없을 경우 비회원으로 등록
-        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", (ctx.author.id, 0))  # 0: 비회원
+        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", (ctx.author.id, 0, None, 5))  # 0: 비회원
         dbdata = await aiocursor.fetchone()
+    await economy_aiodb.commit()
+    await economy_aiodb.close()
 
 async def database_create(ctx):
     # 서버 아이디 및 서버 이름 가져오기

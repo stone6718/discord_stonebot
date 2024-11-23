@@ -1,4 +1,6 @@
 /database
+/admins.db
 /security.py
+/database_del.py
 /system_database
 /__pycache__
