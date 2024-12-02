@@ -1729,7 +1729,7 @@ def get_card_value(card):
 # 전역 변수로 데이터베이스 연결 관리
 database_connection = None
 
-async def get_database_connection():
+async def get_database_connection_baccarat():
     global database_connection
     if database_connection is None:
         db_path = os.path.join('system_database', 'baccarat.db')
@@ -1801,7 +1801,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
 
     # 승리 데이터 업데이트
-    db = await get_database_connection()
+    db = await get_database_connection_baccarat()
     try:
         async with db:
             await db.execute('INSERT INTO winner (winner) VALUES (?)', (winner,))

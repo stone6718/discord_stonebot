@@ -706,7 +706,9 @@ async def update_stock_prices():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
+    # 주식 정보를 가져오는 쿼리 실행
     await aiocursor.execute("SELECT name, price FROM stock")
+    # 결과를 모두 가져오기
     stocks = await aiocursor.fetchall()
 
     for stock in stocks:
@@ -719,6 +721,9 @@ async def update_stock_prices():
 
     await economy_aiodb.commit()
     await aiocursor.close()
+    await economy_aiodb.close()
+
+    return stocks
 
 async def addstock(_name, _price):
     db_path = os.path.join('system_database', 'economy.db')
@@ -909,12 +914,9 @@ async def get_lose_money(_id):
     if dat == False: return 0
     return dat[0][5]
 
-async def get_database_connection():
-    db_path = os.path.join('system_database', 'economy.db')
-    return await aiosqlite.connect(db_path)
-
 async def add_exp(_id, _amount):
-    economy_aiodb = await get_database_connection()  # 연결을 await로 호출
+    db_path = os.path.join('system_database', 'economy.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
     async with economy_aiodb:
         async with economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (_id,)) as cursor:
             dat = await cursor.fetchone()
@@ -930,7 +932,8 @@ async def add_exp(_id, _amount):
             await economy_aiodb.commit()  # 변경 사항 커밋
 
 async def get_exp(_id):
-    economy_aiodb = await get_database_connection()  # 연결을 await로 호출
+    db_path = os.path.join('system_database', 'economy.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
     async with economy_aiodb:
         async with economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (_id,)) as cursor:
             dat = await cursor.fetchone()
