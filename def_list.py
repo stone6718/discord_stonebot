@@ -702,6 +702,24 @@ async def update_coin_prices():
     await economy_aiodb.commit()
     await aiocursor.close()
 
+async def update_stock_prices():
+    db_path = os.path.join('system_database', 'economy.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    aiocursor = await economy_aiodb.cursor()
+    await aiocursor.execute("SELECT name, price FROM stock")
+    stocks = await aiocursor.fetchall()
+
+    for stock in stocks:
+        name, price = stock
+        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
+        new_price = min(new_price, 5000000)  # 주식 가격 상한가
+        new_price = max(new_price, 5000)  # 주식 가격 하한가
+        new_price = int(new_price)
+        await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (new_price, name))
+
+    await economy_aiodb.commit()
+    await aiocursor.close()
+
 async def addstock(_name, _price):
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
@@ -815,24 +833,6 @@ async def removeuser_stock(user_id, _name, _count):
     sell_price = stock_price * _count
     await addmoney(user_id, sell_price)
 
-async def update_stock_prices():
-    db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, price FROM stock")
-    stocks = await aiocursor.fetchall()
-
-    for stock in stocks:
-        name, price = stock
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
-        new_price = min(new_price, 5000000)  # 주식 가격 상한가
-        new_price = max(new_price, 5000)  # 주식 가격 하한가
-        new_price = int(new_price)
-        await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (new_price, name))
-
-    await economy_aiodb.commit()
-    await aiocursor.close()
-
 async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multiplier, lose_exp_divisor):
     random_number = random.randrange(1, 101)
     if random_number <= success_rate:  # 성공
@@ -909,35 +909,33 @@ async def get_lose_money(_id):
     if dat == False: return 0
     return dat[0][5]
 
-async def add_exp(_id, _amount):
-    # 데이터베이스 연결
+async def get_database_connection():
     db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    async with economy_aiodb.cursor() as aiocursor:
-        # 사용자 정보 조회
-        await aiocursor.execute("SELECT * FROM user WHERE id=?", (_id,))
-        dat = await aiocursor.fetchall()
+    return await aiosqlite.connect(db_path)
+
+async def add_exp(_id, _amount):
+    economy_aiodb = await get_database_connection()  # 연결을 await로 호출
+    async with economy_aiodb:
+        async with economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (_id,)) as cursor:
+            dat = await cursor.fetchone()
 
         if not dat:
             # 사용자가 존재하지 않는 경우, 함수 종료
             return  # 사용자가 없으므로 추가 작업을 하지 않음
 
-        # 사용자가 존재하는 경우, 경험치 업데이트
-        current_exp = dat[0][4] if dat[0][4] is not None else 0  # None 체크
-        await aiocursor.execute("UPDATE user SET exp = ? WHERE id = ?", (current_exp + _amount, _id))
-
-    # 변경 사항 커밋
-    await economy_aiodb.commit()
-    await economy_aiodb.close()  # 데이터베이스 연결 종료
+        current_exp = dat[0] if dat[0] is not None else 0  # None 체크
+        
+        async with economy_aiodb.execute('BEGIN TRANSACTION'):
+            await economy_aiodb.execute("UPDATE user SET exp = ? WHERE id = ?", (current_exp + _amount, _id))
+            await economy_aiodb.commit()  # 변경 사항 커밋
 
 async def get_exp(_id):
-    db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.execute("select * from user where id=?", (_id, ))
-    dat = await aiocursor.fetchall()
-    await aiocursor.close()
-    if dat == False: return 0
-    return dat[0][4]
+    economy_aiodb = await get_database_connection()  # 연결을 await로 호출
+    async with economy_aiodb:
+        async with economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (_id,)) as cursor:
+            dat = await cursor.fetchone()
+
+    return dat[0] if dat else 0  # 사용자가 존재하지 않는 경우 0 반환
 
 async def dev_deactivate(ctx):
     embed = disnake.Embed(color=embederrorcolor)
@@ -973,7 +971,8 @@ DB_PATH = os.path.join('system_database', 'economy.db')
 ERROR_COLOR = 0xff0000  # 오류 색상 예시
 
 async def member_status(ctx):
-    await ctx.response.defer()
+    if not ctx.response.is_done():
+        await ctx.response.defer()
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (ctx.author.id,)) as aiocursor:

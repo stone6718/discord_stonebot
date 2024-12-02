@@ -8,7 +8,7 @@ def get_permissions(guild_id: str):
 
     conn = sqlite3.connect(file_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT 음악기능, 경제기능, 주식기능, 관리기능 FROM 설정")
+    cursor.execute("SELECT 음악기능, 경제기능, 관리기능, 유틸리티기능 FROM 설정")
     permissions = cursor.fetchone()
     conn.close()
 

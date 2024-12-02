@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>라이센스 코드 생성기</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .container {
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            }
+            button {
+                padding: 10px 15px;
+                margin-top: 10px;
+                border: none;
+                background-color: #007bff;
+                color: white;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #0056b3;
+            }
+            #licenseCodes {
+                margin-top: 15px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+
+    <div class="container">
+        <h1>라이센스 코드 생성기</h1>
+        <select id="prefix">
+            <option value="gift-">gift-</option>
+            <option value="reward-">reward-</option>
+            <option value="general-">general-</option>
+        </select>
+        <br>
+        <label for="count">생성할 개수:</label>
+        <input type="number" id="count" value="1" min="1" max="100">
+        <button onclick="generateLicenseCodes()">코드 생성</button>
+        <div id="licenseCodes"></div>
+    </div>
+
+    <script>
+        function generateLicenseCodes() {
+            const prefix = document.getElementById('prefix').value;
+            const count = parseInt(document.getElementById('count').value);
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let codes = '';
+
+            for (let j = 0; j < count; j++) {
+                let licenseCode = prefix;
+                for (let i = 0; i < 5; i++) { // 접두사를 제외한 12자리 생성
+                    licenseCode += characters.charAt(Math.floor(Math.random() * characters.length));
+                }
+                codes += licenseCode + '<br>';
+            }
+            document.getElementById('licenseCodes').innerHTML = '생성된 라이센스 코드:<br>' + codes;
+        }
+    </script>
+    </body>
+</html>
