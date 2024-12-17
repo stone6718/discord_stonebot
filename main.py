@@ -1,12 +1,12 @@
 import security as sec, coolsms_kakao
 from def_list import *
-import bs4, re, pytz, math, time, os
+import bs4, re, pytz, math, time, os, sqlite3
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
 import random, string, datetime, psutil, websocket, aiohttp, cpuinfo
 from gtts import gTTS
 import yt_dlp as youtube_dl
 from googletrans import Translator
-from disnake import FFmpegPCMAudio, TextInputStyle
+from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
 from disnake.ui import Button, View
 from disnake.ext import commands, tasks
 from collections import defaultdict
@@ -15,6 +15,8 @@ from permissions import get_permissions
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
+import matplotlib.pyplot as plt
+from matplotlib import font_manager, rc
 
 #intents = disnake.Intents.all()
 bot = commands.Bot(command_prefix="/") #intents=intents)
@@ -30,6 +32,11 @@ embedsuccess = 0x00ff00
 embederrorcolor = 0xff0000
 
 cpu_info = cpuinfo.get_cpu_info()
+
+# 한글 폰트 설정
+font_path = 'NanumGothic.ttf'  # 시스템에 맞는 한글 폰트 경로로 변경
+font_manager.fontManager.addfont(font_path)
+rc('font', family='NanumGothic')
 ##################################################################################################
 # 데이터베이스에서 권한을 가져오는 함수
 async def get_permissions(server_id: int):
@@ -383,7 +390,10 @@ async def ai_ask(ctx,
     if not await member_status(ctx):
         return
     await membership(ctx)  # 회원 상태 확인
-    await ctx.response.defer()  # 응답 지연
+
+    # 응답 지연
+    if not ctx.response.is_done():
+        await ctx.response.defer()  # 응답 지연
 
     # 사용자의 크레딧 확인
     user_credit = await get_user_credit(ctx.author.id)
@@ -427,6 +437,41 @@ async def ai_ask(ctx,
                 embed.add_field(name="질문", value=f"{ask}", inline=False)
                 embed.add_field(name="답변", value=f"{answer}", inline=False)
                 await ctx.followup.send(embed=embed)  # 후속 응답으로 보내기
+
+    except Exception as e:
+        print(f"오류 발생: {e}")  # 로그 출력
+        await ctx.followup.send("오류가 발생했습니다. 다시 시도해 주세요.")
+
+@bot.slash_command(name="ai대화", description="스톤 AI와 대화합니다.")
+async def ai_chat(ctx, ask: str = commands.Param(name="내용")):
+    if not await check_permissions(ctx):
+        return
+
+    await command_use_log(ctx, "ai대화")
+    if not await member_status(ctx):
+        return
+    await membership(ctx)  # 회원 상태 확인
+
+    # 응답 지연
+    if not ctx.response.is_done():
+        await ctx.response.defer()  # 응답 지연
+
+    try:
+        # GPT API 호출
+        answer = get_gpt_response(('''너는 이제부터 스톤이야, 
+        돌맹이는 스톤을 만든 개발자야, 
+        반말로 말을 해줘, 
+        친근하게 말을 해줘, 
+        이모지를 사용해서 말을 해줘, 
+        너는 돌맹이가 만들었어, 
+        ''' + ask), "gpt-4o-mini")
+
+        if len(answer) > 500:
+            pass
+        else:
+            # 임베드 응답 생성
+            embed = disnake.Embed(title="스톤 AI", description=f"{answer}", color=0x00ff00)
+            await ctx.followup.send(embed=embed)  # 후속 응답으로 보내기
 
     except Exception as e:
         print(f"오류 발생: {e}")  # 로그 출력
@@ -1726,16 +1771,6 @@ def get_card_value(card):
     }
     return shape_score.get(card, 0)
 
-# 전역 변수로 데이터베이스 연결 관리
-database_connection = None
-
-async def get_database_connection_baccarat():
-    global database_connection
-    if database_connection is None:
-        db_path = os.path.join('system_database', 'baccarat.db')
-        database_connection = await aiosqlite.connect(db_path)
-    return database_connection
-
 @bot.slash_command(name="도박_바카라", description="보유금액으로 도박을 합니다.")
 async def betting_card(ctx, money: int = commands.Param(name="금액"), method: str = commands.Param(name="배팅", choices=["플레이어", "무승부", "뱅커"])):
     if not await check_permissions(ctx):
@@ -1801,11 +1836,13 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
 
     # 승리 데이터 업데이트
-    db = await get_database_connection_baccarat()
+    db_path = os.path.join('system_database', 'baccarat.db')
+
     try:
-        async with db:
-            await db.execute('INSERT INTO winner (winner) VALUES (?)', (winner,))
-            await db.commit()
+        conn = await aiosqlite.connect(db_path)  # db는 데이터베이스 파일의 경로입니다.
+        await conn.execute('INSERT INTO winner (winner) VALUES (?)', (winner,))
+        await conn.commit()
+        await conn.close()
     except Exception as e:
         print(f"데이터베이스 업데이트 중 오류 발생: {e}")
 
@@ -1813,10 +1850,18 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     embed = disnake.Embed(color=embedsuccess if winner == method else embederrorcolor)
 
     if winner == method:  # win
-        win_money = money * (2 if winner == "플레이어" else 1.95)
+        if winner == "플레이어":
+            win_money = money * 2
+        elif winner == "뱅커":
+            win_money = money * 1.95
+        elif winner == "무승부":
+            win_money = money * 8
+        else:
+            print("Error")
+        
         win_money = round(win_money)
         await addmoney(user.id, win_money - money)
-        await add_exp(user.id, round((money * 2) / 600))
+        await add_exp(user.id, round(win_money / 600))
         embed.add_field(name="성공", value=f"{win_money:,}원을 얻었습니다.", inline=False)
     else:  # lose
         if winner == "무승부":
@@ -1835,6 +1880,52 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     card_results += f"뱅커 : {', '.join([f'{mix_b[i]}{shape_b[i]}' for i in range(len(mix_b))])}, {score_calculate_b}"
     embed.add_field(name="카드 결과", value=card_results)
     await ctx.send(embed=embed)
+
+@bot.slash_command(name="바카라_분석", description="분석 데이터를 그래프로 보여줍니다.")
+async def baccarat(ctx):
+    db_path = os.path.join('system_database', 'baccarat.db')
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    query = "SELECT winner, COUNT(*) as count FROM winner GROUP BY winner"
+    cursor.execute(query)
+
+    # 결과 가져오기
+    results = cursor.fetchall()
+
+    # 데이터 분리
+    commands = [row[0] for row in results]
+    counts = [row[1] for row in results]
+
+    # 그래프 그리기
+    plt.figure(figsize=(12, 6))
+    bars = plt.bar(commands, counts, color='skyblue')
+    plt.xlabel('결과')
+    plt.ylabel('횟수')
+    plt.title('분석')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    # 바 위에 횟수 표시
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, yval, int(yval), ha='center', va='bottom')
+
+    # 그래프 이미지 저장
+    image_path = 'baccarat_analysis.png'
+    plt.savefig(image_path)
+    plt.close()  # 그래프 닫기
+
+    # 임베드 메시지 생성
+    embed = disnake.Embed(title="바카라 분석 결과", color=0x00ff00)
+    embed.set_image(url="attachment://baccarat_analysis.png")  # 첨부된 이미지 URL 설정
+
+    # Discord에 이미지와 함께 임베드 메시지 전송
+    await ctx.send(embed=embed, file=disnake.File(image_path, filename='baccarat_analysis.png'))
+
+    # 데이터베이스 연결 종료
+    conn.close()
 
 @bot.slash_command(name="로또구매", description="로또을 구매합니다.")
 async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str = None):
@@ -2107,14 +2198,15 @@ async def economy_join(ctx):
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (ctx.author.id,))
     dbdata = await aiocursor.fetchone()
+    add_money = 50000
     await aiocursor.close()
     if dbdata == None:
-        aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, inquiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (ctx.author.id, 0, 0, 0, 0, 0, 0, 0))
+        aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off) VALUES (?, ?, ?, ?, ?, ?, ?)", (ctx.author.id, add_money, 0, 0, 0, 0, 0))
         await economy_aiodb.commit()
         await aiocursor.close()
-        await addmoney(ctx.author.id, 30000)
+        await addmoney(ctx.author.id, add_money)
         embed=disnake.Embed(color=embedsuccess)
-        embed.add_field(name="✅ 가입", value=f"{ctx.author.mention} 가입이 완료되었습니다.\n지원금 30,000원이 지급되었습니다.")
+        embed.add_field(name="✅ 가입", value=f"{ctx.author.mention} 가입이 완료되었습니다.\n지원금 {add_money:,}원이 지급되었습니다.")
         await ctx.send(embed=embed)
     else:
         if int(dbdata[0]) == 1:
@@ -2293,15 +2385,15 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     # 메시지 전송
     message = await ctx.send(embed=embed, view=view)
 
-    async def attack_callback(ctx):
-        await ctx.response.defer()  # 응답 지연
+    async def attack_callback(interaction):
+        await interaction.response.defer()  # 응답 지연
         nonlocal monster_hp
 
         # 몬스터 도망 확률 체크
         if random.random() < 0.05:  # 5% 확률로 도망
-            embed = disnake.Embed(color=embederrorcolor)
+            embed = disnake.Embed(color=0xff0000)
             embed.add_field(name="🏃 사냥실패", value=f"{monster_name}이(가) 도망쳤습니다!")
-            await ctx.followup.edit_message(embed=embed, view=None)  # 버튼 제거
+            await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
             return
 
         # 공격 시 칼의 파괴 확률
@@ -2313,13 +2405,13 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(color=0x00ff00)
                 embed.add_field(name="✅ 방어 성공", value=f"{sword_name}이(가) 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
-                await ctx.followup.edit_message(embed=embed, view=view)
+                await interaction.followup.edit_message(embed=embed, view=view)
                 return
             else:
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
                 embed = disnake.Embed(color=0xff0000)
                 embed.add_field(name="❌ 실패", value=f"{sword_name}이(가) 파괴되었습니다.")
-                await ctx.followup.edit_message(embed=embed, view=None)
+                await interaction.followup.edit_message(embed=embed, view=None)
                 return
 
         # 몬스터에게 데미지 입힘
@@ -2328,19 +2420,19 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         if monster_hp > 0:
             embed = disnake.Embed(title="몬스터와의 전투!", color=0x00ff00)
             embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
-            await ctx.followup.edit_message(embed=embed, view=view)
+            await interaction.followup.edit_message(embed=embed, view=view)
         else:
             reward = monsters[monster_name]["reward"]
             await add_cash_item_count(user_id, reward)
             embed = disnake.Embed(color=0x00ff00)
             embed.add_field(name="✅ 성공", value=f"{monster_name}을(를) 처치했습니다! 보상으로 {reward}을(를) 받았습니다.")
-            await ctx.followup.edit_message(embed=embed, view=None)  # 버튼 제거
+            await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
 
-    async def end_battle_callback(ctx):
-        await ctx.response.defer()  # 응답 지연
+    async def end_battle_callback(interaction):
+        await interaction.response.defer()  # 응답 지연
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="⚔️ 전투 종료", value="전투가 종료되었습니다.")
-        await ctx.followup.edit_message(embed=embed, view=None)  # 버튼 제거
+        await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
 
     # 버튼 콜백 설정
     attack_button.callback = attack_callback
@@ -2497,7 +2589,7 @@ upgrade_chances = {
 }
 
 @bot.slash_command(name="강화", description="아이템을 강화합니다.")
-async def upgrade_item(ctx, item_name: str):
+async def upgrade_item(ctx: disnake.CommandInteraction, item_name: str):
     if not await check_permissions(ctx):
         return
     
@@ -2527,10 +2619,10 @@ async def upgrade_item(ctx, item_name: str):
     await remove_cash_item_count(ctx.author.id, upgrade_cost)
 
     # 버튼 생성
-    view = create_upgrade_view(ctx, item_name, current_class, upgrade_cost)
+    view = await create_upgrade_view(ctx, item_name, current_class, upgrade_cost)
 
     # 초기 메시지 전송
-    embed = create_upgrade_embed(item_name, current_class, upgrade_cost)
+    embed = await create_upgrade_embed(item_name, current_class, upgrade_cost)
     await ctx.send(embed=embed, view=view)
 
 async def create_upgrade_view(ctx, item_name, current_class, upgrade_cost):
@@ -2542,8 +2634,8 @@ async def create_upgrade_view(ctx, item_name, current_class, upgrade_cost):
     view.add_item(cancel_button)
 
     # 버튼 콜백 설정
-    upgrade_button.callback = lambda ctx: upgrade_callback(ctx, ctx, item_name, current_class, upgrade_button, view)
-    cancel_button.callback = lambda ctx: cancel_callback(ctx, ctx)
+    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, item_name, current_class, view)
+    cancel_button.callback = lambda interaction: cancel_callback(interaction)
 
     return view
 
@@ -2554,71 +2646,71 @@ async def create_upgrade_embed(item_name, current_class, upgrade_cost):
     embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
     return embed
 
-async def upgrade_callback(ctx, item_name, current_class, upgrade_button, view):
-    if ctx.user.id != ctx.author.id:
-        return await send_error_message(ctx, "이 버튼은 호출자만 사용할 수 있습니다.")
+async def upgrade_callback(interaction, item_name, current_class, view):
+    if interaction.user.id != interaction.author.id:
+        return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
     # 강화 중 파괴 확률 체크
-    if await handle_destruction(ctx, item_name):
+    if await handle_destruction(interaction, item_name):
         return
 
     # 강화 성공 확률 확인
     success_chance = upgrade_chances.get(current_class + 1)
     if success_chance is None:
-        return await send_error_message(ctx, "강화 성공 확률 정보를 찾을 수 없습니다.")
+        return await send_error_message(interaction, "강화 성공 확률 정보를 찾을 수 없습니다.")
 
     if random.random() <= success_chance:
-        await handle_upgrade_success(ctx, item_name, current_class, view)
+        await handle_upgrade_success(interaction, item_name, current_class, view)
     else:
-        await handle_upgrade_failure(ctx, item_name, current_class, view)
+        await handle_upgrade_failure(interaction, item_name, current_class, view)
 
-async def handle_destruction(ctx, item_name):
+async def handle_destruction(interaction, item_name):
     destruction_chance = random.random()
     if destruction_chance <= 0.05:  # 5% 확률로 파괴
-        defense_item_info = await get_user_item(ctx.author.id, "파괴방어권")
+        defense_item_info = await get_user_item(interaction.author.id, "파괴방어권")
         if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
-            await remove_item_from_user_inventory(ctx.author.id, "파괴방어권", 1)
+            await remove_item_from_user_inventory(interaction.author.id, "파괴방어권", 1)
             embed = disnake.Embed(color=0x00ff00)
             embed.add_field(name="✅ 방어 성공", value=f"{item_name} 아이템이 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
-            await ctx.followup.edit_message(embed=embed)
+            await interaction.response.edit_message(embed=embed, view=None)
             return True  # 방어 성공
-        await remove_item_from_user_inventory(ctx.author.id, item_name, 1)
+        await remove_item_from_user_inventory(interaction.author.id, item_name, 1)
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="❌ 아이템 파괴", value=f"{item_name} 아이템이 파괴되었습니다.")
-        await ctx.followup.edit_message(embed=embed)
+        await interaction.response.edit_message(embed=embed, view=None)
         return True  # 아이템 파괴
     return False  # 파괴되지 않음
 
-async def handle_upgrade_success(ctx, item_name, current_class, view):
+async def handle_upgrade_success(interaction, item_name, current_class, view):
     new_class = current_class + 1
-    await update_item_class(ctx.author.id, item_name, new_class)
+    await update_item_class(interaction.author.id, item_name, new_class)
     embed = disnake.Embed(color=0x00ff00)
     embed.add_field(name="✅ 강화 성공", value=f"{item_name} 아이템이 {new_class}강으로 강화되었습니다.")
     embed.add_field(name="현재 강화 등급", value=f"{new_class}강", inline=False)
     embed.add_field(name="비용", value=f"{(new_class + 1) * 100 + 100} 캐시", inline=False)
-    await ctx.followup.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message(embed=embed, view=view)
 
-async def handle_upgrade_failure(ctx, item_name, current_class, view):
-    await update_item_class(ctx.author.id, item_name, current_class)
+async def handle_upgrade_failure(interaction, item_name, current_class, view):
+    await update_item_class(interaction.author.id, item_name, current_class)
     embed = disnake.Embed(color=0xff0000)
     embed.add_field(name="❌ 강화 실패", value=f"{item_name} 아이템의 강화에 실패했습니다.")
     embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
     embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
     embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
-    await ctx.followup.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message(embed=embed, view=view)
 
-async def cancel_callback(ctx):
-    if ctx.user.id != ctx.author.id:
-        return await send_error_message(ctx, "이 버튼은 호출자만 사용할 수 있습니다.")
+async def cancel_callback(interaction):
+    if interaction.user.id != interaction.author.id:
+        return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
     embed = disnake.Embed(color=0xff0000)
     embed.add_field(name="⚔️ 강화 취소", value="강화가 취소되었습니다.")
-    await ctx.followup.edit_message(embed=embed, view=None)
+    await interaction.response.edit_message(embed=embed, view=None)
 
-async def send_error_message(ctx, message):
+async def send_error_message(interaction, message):
     embed = disnake.Embed(color=0xff0000)
     embed.add_field(name="❌ 오류", value=message)
-    await ctx.send(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 @bot.slash_command(name="아이템거래", description="아이템을 구매 또는 판매할 수 있습니다.")
 async def item_trading(ctx, item_name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), count: int = commands.Param(name="개수", default=1)):
@@ -2699,13 +2791,10 @@ class ItemView2(disnake.ui.View):
         if self.current_page < self.max_page:
             self.add_item(NextButton())
 
-    async def update_message(self, ctx=None):
+    async def update_message(self, interaction):
         embed = await self.create_embed()
         self.update_buttons()
-        if ctx:
-            await ctx.followup.edit_message(embed=embed, view=self)
-        elif self.message:
-            await self.message.edit(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def create_embed(self):
         embed = disnake.Embed(title="인벤토리 📦", color=0x00ff00)
@@ -2747,27 +2836,25 @@ async def inventory(ctx: disnake.CommandInteraction):
         # 초기 임베드 생성 및 메시지 전송
         view.message = await ctx.send(embed=await view.create_embed(), view=view)
 
-
 class PreviousButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="이전", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: ItemView2 = self.view
         if view.current_page > 0:
             view.current_page -= 1
-            await view.update_message(ctx)
-
+            await view.update_message(interaction)
 
 class NextButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="다음", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: ItemView2 = self.view
         if view.current_page < view.max_page:
             view.current_page += 1
-            await view.update_message(ctx)
+            await view.update_message(interaction)
 
 class CoinView1(disnake.ui.View):
     def __init__(self, data, per_page=5):
@@ -2778,6 +2865,7 @@ class CoinView1(disnake.ui.View):
         self.max_page = (len(data) - 1) // per_page
         self.message = None
         self.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.last_interaction = None  # 마지막 상호작용 저장
 
         self.update_buttons()
 
@@ -2788,13 +2876,10 @@ class CoinView1(disnake.ui.View):
         if self.current_page < self.max_page:
             self.add_item(NextButton())
 
-    async def update_message(self, ctx=None):
+    async def update_message(self, interaction):
         embed = await self.create_embed()
         self.update_buttons()
-        if ctx:
-            await ctx.followup.edit_message(embed=embed, view=self)
-        elif self.message:
-            await self.message.edit(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def create_embed(self):
         embed = disnake.Embed(title="코인목록", color=0x00ff00)
@@ -2809,21 +2894,23 @@ class PreviousButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="이전", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: CoinView1 = self.view
         if view.current_page > 0:
             view.current_page -= 1
-            await view.update_message(ctx)
+            view.last_interaction = interaction  # 현재 상호작용 저장
+            await view.update_message(interaction)
 
 class NextButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="다음", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: CoinView1 = self.view
         if view.current_page < view.max_page:
             view.current_page += 1
-            await view.update_message(ctx)
+            view.last_interaction = interaction  # 현재 상호작용 저장
+            await view.update_message(interaction)
 
 @bot.slash_command(name="코인목록", description="상장된 가상화폐를 확인합니다.")
 async def coin_list(ctx):
@@ -2842,11 +2929,10 @@ async def coin_list(ctx):
     view.message = await ctx.send(embed=embed, view=view)
     view_update2.start(view)  # 태스크 시작
 
-@tasks.loop(seconds=20)
+@tasks.loop(seconds=60)
 async def view_update2(view: CoinView1):
-    view.data = await getcoin()
-    view.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await view.update_message()
+    if view.last_interaction:  # 마지막 상호작용이 있을 때만 업데이트
+        await view.update_message(view.last_interaction)
 
 class CoinView(disnake.ui.View):
     def __init__(self, coins, per_page=5):
@@ -2993,7 +3079,6 @@ class StockView1(disnake.ui.View):
         self.max_page = (len(data) - 1) // per_page
         self.message = None
         self.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         self.update_buttons()
 
     def update_buttons(self):
@@ -3003,13 +3088,10 @@ class StockView1(disnake.ui.View):
         if self.current_page < self.max_page:
             self.add_item(NextButton())
 
-    async def update_message(self, ctx=None):
+    async def update_message(self, interaction):
         embed = await self.create_embed()
         self.update_buttons()
-        if ctx:
-            await ctx.followup.edit_message(embed=embed, view=self)
-        elif self.message:
-            await self.message.edit(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def create_embed(self):
         embed = disnake.Embed(title="주식목록", color=0x00ff00)
@@ -3024,19 +3106,19 @@ class PreviousButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="이전", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: StockView1 = self.view
         view.current_page -= 1
-        await view.update_message(ctx)
+        await view.update_message(interaction)
 
 class NextButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="다음", style=disnake.ButtonStyle.primary)
 
-    async def callback(self, ctx: disnake.Interaction):
+    async def callback(self, interaction: disnake.MessageInteraction):
         view: StockView1 = self.view
         view.current_page += 1
-        await view.update_message(ctx)
+        await view.update_message(interaction)
 
 @bot.slash_command(name="주식목록", description="상장된 주식을 확인합니다.")
 async def stock_list(ctx):
@@ -3047,7 +3129,6 @@ async def stock_list(ctx):
     view = StockView1(data)
     embed = await view.create_embed()
     view.message = await ctx.send(embed=embed, view=view)
-    view_update1.start(view)
 
 @tasks.loop(seconds=20)
 async def view_update1(view:StockView1):
@@ -3367,11 +3448,17 @@ async def bot_info(ctx):
         embed_color = 0xff0000  # 빨간색 (매우 나쁨)
         status = "응답 속도가 매우 느립니다! ⚠️"
 
+    total_members = 0  # 총 유저 수 초기화
+
+    # 봇이 참여하고 있는 모든 서버를 반복
+    for guild in bot.guilds:
+        total_members += guild.member_count  # 각 서버의 멤버 수를 누적
+    
     embed = disnake.Embed(title="봇 정보", color=embed_color)
     embed.add_field(name="서버수", value=f"{len(bot.guilds)}", inline=True)
-    embed.add_field(name="업타임", value=f"{get_uptime()}", inline=True)
+    embed.add_field(name="유저수", value=f"{total_members:,}", inline=True)
     embed.add_field(name="", value="", inline=False)
-    embed.add_field(name="서포트서버", value=f"[support]({sec.support_server_url})", inline=True)
+    embed.add_field(name="업타임", value=f"{get_uptime()}", inline=True)
     embed.add_field(name="개발자", value=f"{sec.developer_name}", inline=True)
 
     # CPU 정보 불러오기
@@ -3386,8 +3473,16 @@ async def bot_info(ctx):
     server_date = datetime.now()
     embed.add_field(name="시스템 정보", value=f"```python {platform.python_version()}\ndiscord.py {version('discord.py')}\ndisnake {version('disnake')}\nCPU : {cpu_info['brand_raw']}\nOS : {uname_info.system} {uname_info.release}\nMemory : {used_memory}GB / {total_memory}GB ({percent_memory}%)```\n응답속도 : {int(ping_time)}ms / {status}\n{server_date.strftime('%Y년 %m월 %d일 %p %I:%M').replace('AM', '오전').replace('PM', '오후')}", inline=False)
 
+    # 링크 버튼 추가
+    support_button = Button(label="서포트 서버", url=sec.support_server_url, style=ButtonStyle.url)
+    docs_button = Button(label="하트 누르기", url="https://koreanbots.dev/bots/1202574228587810877/vote", style=ButtonStyle.url)  # 여기에 원하는 URL을 넣으세요.
+
+    view = disnake.ui.View()
+    view.add_item(support_button)
+    view.add_item(docs_button)
+
     # 응답 전송
-    await ctx.edit_original_response(embed=embed)
+    await ctx.edit_original_response(embed=embed, view=view)
 
 @bot.slash_command(name="슬로우모드", description="채팅방에 슬로우모드를 적용합니다. [관리자전용]")
 async def slowmode(ctx, time: int = commands.Param(name="시간", description="시간(초)")):
@@ -3779,7 +3874,7 @@ async def manual_lottery_draw(ctx: disnake.ApplicationCommandInteraction):
     embed.add_field(name="당첨자 수", value=f"1등: {prize_counts['1등']}명\n2등: {prize_counts['2등']}명\n3등: {prize_counts['3등']}명\n4등: {prize_counts['4등']}명\n5등: {prize_counts['5등']}명", inline=False)
 
     # 특정 채널에 결과 전송
-    channel = bot.get_channel(channel_id)
+    channel = bot.get_channel(sec.lotto_ch_id)
     if channel:
         await channel.send(embed=embed)
 
@@ -3869,7 +3964,7 @@ async def use_limit(ctx, user: disnake.Member = commands.Param(name="유저"), r
                 await aiocursor.close()
         else:
             # user 테이블에 새로운 유저 추가
-            aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, inquiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user.id, 0, 1, 0, 0, 0, 0, 0))
+            aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user.id, 0, 1, 0, 0, 0, 0, 0))
             await economy_aiodb.commit()
             await aiocursor.close()
 
@@ -4142,20 +4237,7 @@ async def on_member_remove(member):
         # 데이터베이스 연결 종료
         await aiocursor.close()
         await aiodb.close()
-
-async def check_user_in_db(user_id):
-    # 데이터베이스 쿼리 로직
-    db_path = os.path.join('system_database', 'economy.db')
-    
-    aiodb = await aiosqlite.connect(db_path)  # 데이터베이스 연결
-    aiocursor = await aiodb.cursor()  # 비동기 커서 생성
-    await aiocursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
-    result = await aiocursor.fetchone()  # cursor에서 fetchone 호출
-    await aiocursor.close()  # 커서 닫기
-    await aiodb.close()  # 데이터베이스 연결 닫기
-    return result is not None  # 사용자의 존재 여부 리턴
         
-
 class inquiry_Modal(disnake.ui.Modal):
     def __init__(self):
         components = [
@@ -4217,15 +4299,9 @@ async def on_message(message):
     if message.author == bot.user or message.author.bot:
         return
 
-    user_id = str(message.author.id)
+    user_id = message.author.id
 
-    # 데이터베이스에서 사용자 데이터 확인
-    try:
-        user_exists = await check_user_in_db(user_id)
-        if user_exists:
-            await add_exp(user_id, 5)
-    except Exception as e:
-        print(f"사용자 데이터 확인 중 오류 발생: {e}")
+    await add_exp(user_id, 5)
 
     # DM 채널에서의 처리
     if isinstance(message.channel, disnake.DMChannel):
@@ -4363,12 +4439,11 @@ async def reset_check_in_status():
 reset_check_in_status.start()
 
 db_path = os.path.join('system_database', 'lotto.db')
-channel_id = 1300246995956404224  # 특정 채널 ID
 
 @tasks.loop(seconds=1)  # 매 1초마다 체크
 async def lottery_draw():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 KST 시간 가져오기
-    if now.weekday() == 5 and now.hour == 21 and now.minute == 0 and now.second == 0:  # 매주 토요일 21시 0분 0초
+    if now.weekday() == 5 and now.hour == 20 and now.minute == 45 and now.second == 0:  # 매주 토요일 21시 0분 0초
         await draw_lottery()
 
 lottery_draw.start()
@@ -4447,7 +4522,7 @@ async def draw_lottery():
             print(embed.to_dict())
 
         # 특정 채널에 결과 전송
-        channel = bot.get_channel(channel_id)
+        channel = bot.get_channel(sec.lotto_ch_id)
         if channel:
             await channel.send(embed=embed)
 
@@ -4547,7 +4622,7 @@ async def get_user_class(user_id):
     return result[0] if result else None  # 클래스 값 반환
 
 def calculate_credit(user_class):
-    credits = [3, 30, 60, 90, 120]
+    credits = [30, 300, 600, 900, 1200]
     return credits[user_class] if 0 <= user_class < len(credits) else 0  # 기본값
 
 @tasks.loop(seconds=60)  # 1분마다 실행

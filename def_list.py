@@ -698,17 +698,15 @@ async def update_coin_prices():
         new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가
         new_price = int(new_price)
         await aiocursor.execute("UPDATE coin SET price = ? WHERE name = ?", (new_price, name))
-
-    await economy_aiodb.commit()
+    
     await aiocursor.close()
+    await economy_aiodb.close()
 
 async def update_stock_prices():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    # 주식 정보를 가져오는 쿼리 실행
     await aiocursor.execute("SELECT name, price FROM stock")
-    # 결과를 모두 가져오기
     stocks = await aiocursor.fetchall()
 
     for stock in stocks:
@@ -719,11 +717,8 @@ async def update_stock_prices():
         new_price = int(new_price)
         await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (new_price, name))
 
-    await economy_aiodb.commit()
     await aiocursor.close()
     await economy_aiodb.close()
-
-    return stocks
 
 async def addstock(_name, _price):
     db_path = os.path.join('system_database', 'economy.db')
@@ -859,13 +854,27 @@ async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multip
 async def addmoney(_id, _amount):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.execute("select * from user where id=?", (_id,))
-    dat = await aiocursor.fetchall()
-    if not dat:
-        await aiocursor.execute("insert into user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) values (?, ?, ?, ?, ?, ?, ?, ?)", (_id, _amount, 0, 0, 0, 0, 0, 0))
-    else:
-        await aiocursor.execute("update user set money = ? where id = ?", (dat[0][1] + _amount, _id))
-    await aiocursor.close()
+
+    try:
+        aiocursor = await economy_aiodb.execute("SELECT * FROM user WHERE id=?", (_id,))
+        dat = await aiocursor.fetchone()  # fetchone() 사용
+
+        if dat is None:
+            # 데이터가 없을 경우 새 사용자 추가
+            await aiocursor.execute(
+                "INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (_id, _amount, 0, 0, 0, 0, 0, 0)
+            )
+        else:
+            # 데이터가 있을 경우 금액 업데이트
+            new_balance = dat[1] + _amount
+            await aiocursor.execute("UPDATE user SET money = ? WHERE id = ?", (new_balance, _id))
+
+        await economy_aiodb.commit()  # 변경 사항 커밋
+
+    finally:
+        await aiocursor.close()
+        await economy_aiodb.close()
 
 async def getmoney(user_id):
     db_path = os.path.join('system_database', 'economy.db')
@@ -883,14 +892,25 @@ async def getmoney(user_id):
 async def removemoney(_id, _amount):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.execute("select * from user where id=?", (_id, ))
-    dat = await aiocursor.fetchall()
-    await aiocursor.close()
-    if dat == False: return False
-    if dat[0][1] < _amount: return False
-    aiocursor = await economy_aiodb.execute("update user set money = ? where id = ?", (dat[0][1] - _amount, _id))
-    await economy_aiodb.commit()
-    await aiocursor.close()
+    
+    try:
+        aiocursor = await economy_aiodb.execute("SELECT * FROM user WHERE id=?", (_id,))
+        dat = await aiocursor.fetchone()  # fetchall() 대신 fetchone() 사용
+
+        if dat is None:  # 데이터가 없을 경우
+            return False
+        if dat[1] < _amount:  # 현재 금액이 요청 금액보다 적을 경우
+            return False
+        
+        # 금액 업데이트
+        new_balance = dat[1] - _amount
+        await aiocursor.execute("UPDATE user SET money = ? WHERE id = ?", (new_balance, _id))
+        await economy_aiodb.commit()  # 변경 사항 커밋
+
+    finally:
+        await aiocursor.close()
+        await economy_aiodb.close()
+        
     return True
 
 async def add_lose_money(_id, _amount):
@@ -914,22 +934,25 @@ async def get_lose_money(_id):
     if dat == False: return 0
     return dat[0][5]
 
-async def add_exp(_id, _amount):
+async def add_exp(user_id, amount):
     db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    async with economy_aiodb:
-        async with economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (_id,)) as cursor:
-            dat = await cursor.fetchone()
-
-        if not dat:
-            # 사용자가 존재하지 않는 경우, 함수 종료
-            return  # 사용자가 없으므로 추가 작업을 하지 않음
-
-        current_exp = dat[0] if dat[0] is not None else 0  # None 체크
+    
+    try:
+        economy_aiodb = await aiosqlite.connect(db_path)
+        aiocursor = await economy_aiodb.execute("SELECT * FROM user WHERE id=?", (user_id,))
+        dat = await aiocursor.fetchall()
         
-        async with economy_aiodb.execute('BEGIN TRANSACTION'):
-            await economy_aiodb.execute("UPDATE user SET exp = ? WHERE id = ?", (current_exp + _amount, _id))
-            await economy_aiodb.commit()  # 변경 사항 커밋
+        if not dat:
+            return
+        
+        new_exp = dat[0][4] + amount
+        await aiocursor.execute("UPDATE user SET exp = ? WHERE id = ?", (new_exp, user_id))
+        await economy_aiodb.commit()  # 커밋은 업데이트 후에
+    except Exception as e:
+        print(f"오류 발생: {e}")  # 오류 로그 출력
+    finally:
+        await aiocursor.close()
+        await economy_aiodb.close()
 
 async def get_exp(_id):
     db_path = os.path.join('system_database', 'economy.db')
@@ -1008,7 +1031,7 @@ async def membership(ctx):
     
     if dbdata is None:
         # 데이터가 없을 경우 비회원으로 등록
-        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", (ctx.author.id, 0, None, 5))  # 0: 비회원
+        await economy_aiodb.execute("INSERT INTO user (id, class, expiration_date, credit) VALUES (?, ?, ?, ?)", (ctx.author.id, 0, None, 30))  # 0: 비회원
         dbdata = await aiocursor.fetchone()
     await economy_aiodb.commit()
     await economy_aiodb.close()
