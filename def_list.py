@@ -684,42 +684,6 @@ async def removeuser_coin(user_id, _name, _count):
     sell_price = coin_price * _count
     await addmoney(user_id, sell_price)
 
-async def update_coin_prices():
-    db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, price FROM coin")
-    coins = await aiocursor.fetchall()
-
-    for coin in coins:
-        name, price = coin
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
-        new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가
-        new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가
-        new_price = int(new_price)
-        await aiocursor.execute("UPDATE coin SET price = ? WHERE name = ?", (new_price, name))
-    
-    await aiocursor.close()
-    await economy_aiodb.close()
-
-async def update_stock_prices():
-    db_path = os.path.join('system_database', 'economy.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, price FROM stock")
-    stocks = await aiocursor.fetchall()
-
-    for stock in stocks:
-        name, price = stock
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
-        new_price = min(new_price, 5000000)  # 주식 가격 상한가
-        new_price = max(new_price, 5000)  # 주식 가격 하한가
-        new_price = int(new_price)
-        await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (new_price, name))
-
-    await aiocursor.close()
-    await economy_aiodb.close()
-
 async def addstock(_name, _price):
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:

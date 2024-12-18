@@ -7,7 +7,7 @@ from gtts import gTTS
 import yt_dlp as youtube_dl
 from googletrans import Translator
 from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
-from disnake.ui import Button, View
+from disnake.ui import Button, View, Modal, TextInput
 from disnake.ext import commands, tasks
 from collections import defaultdict
 from importlib.metadata import version
@@ -306,11 +306,11 @@ async def meal(ctx,
 
 
 @bot.slash_command(name="날씨", description="날씨를 볼 수 있습니다.")
-async def weather(ctx, region: str = commands.Param(name="지역", description="지역을 입력하세요.")):
-    if not await check_permissions(ctx):
+async def weather(interaction, region: str = commands.Param(name="지역", description="지역을 입력하세요.")):
+    if not await check_permissions(interaction):
         return
-    await command_use_log(ctx, "날씨")
-    await ctx.followup.defer(ephemeral=False)
+    await command_use_log(interaction, "날씨")
+    await interaction.response.defer(ephemeral=False)  # ctx 대신 interaction 사용
     try:
         now = datetime.now()  # 현재 시각 가져오기
 
@@ -374,10 +374,10 @@ async def weather(ctx, region: str = commands.Param(name="지역", description="
 
         embed.set_footer(text=f"시각 : {now.hour}시 {now.minute}분 {now.second}초")
     
-        await ctx.send(embed=embed)
+        await interaction.send(embed=embed)  # ctx 대신 interaction 사용
 
     except Exception as e:
-        await ctx.send("올바른 지역을 입력해주세요")
+        await interaction.send("올바른 지역을 입력해주세요")
 
 @bot.slash_command(name="ai질문", description="GPT에게 질문하거나 DALL·E에게 이미지 생성을 요청합니다.")
 async def ai_ask(ctx,
@@ -757,6 +757,70 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         filename = data['url'] if stream else ydl.prepare_filename(data)
         return cls(FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
+class VolumeChangeModal(disnake.ui.Modal):
+    def __init__(self):
+        components = [
+            disnake.ui.TextInput(
+                label="변경할 음량 (1~100)",
+                placeholder="음량을 입력하세요",
+                custom_id="volume_input",
+                style=TextInputStyle.short,
+                max_length=3
+            )
+        ]
+        super().__init__(title="음량 변경", components=components)
+
+    async def callback(self, ctx: disnake.ModalInteraction):
+        try:
+            change = int(ctx.text_values['volume_input'])
+
+            if not (1 <= change <= 100):
+                await ctx.send("음량은 1에서 100 사이의 값이어야 합니다.", ephemeral=True)
+                return
+            
+            # 1~100을 0.0~1.0으로 변환
+            new_volume = (change / 100.0)
+            if ctx.guild.voice_client.source:
+                ctx.guild.voice_client.source.volume = new_volume
+                await ctx.send(f"현재 음량: {change:.1f}", ephemeral=True)
+            else:
+                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
+        except ValueError:
+            await ctx.send("올바른 음량 값을 입력하세요.", ephemeral=True)
+
+class MusicChangeModal(Modal):
+    def __init__(self):
+        components = [
+            TextInput(
+                label="변경할 음악 제목이나 링크",
+                placeholder="제목이나 링크를 입력하세요",
+                custom_id="new_music_input",
+                style=TextInputStyle.short
+            )
+        ]
+        super().__init__(title="음악 변경", components=components)
+
+    async def callback(self, ctx: disnake.ModalInteraction):
+        try:
+            new_url_or_name = ctx.text_values['new_music_input']
+            # URL인지 확인하고, 그렇지 않으면 검색어로 처리
+            if not new_url_or_name.startswith("http"):
+                new_url_or_name = f"ytsearch:{new_url_or_name}"
+            
+            new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
+
+            if ctx.guild.voice_client.source:
+                ctx.guild.voice_client.stop()
+                ctx.guild.voice_client.play(new_player)
+
+                change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
+                await ctx.send(embed=change_embed, ephemeral=True)
+            else:
+                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
+        except Exception as e:
+            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            print(e)  # 오류 로그를 출력하여 문제를 확인할 수 있도록 합니다.
+
 waiting_songs = defaultdict(list)
 voice_clients = {}
 
@@ -852,8 +916,7 @@ async def send_control_buttons(ctx, embed):
     buttons = [
         disnake.ui.Button(label="일시 정지", style=disnake.ButtonStyle.red, custom_id="pause"),
         disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
-        disnake.ui.Button(label="음량 증가", style=disnake.ButtonStyle.blurple, custom_id="volume_up"),
-        disnake.ui.Button(label="음량 감소", style=disnake.ButtonStyle.blurple, custom_id="volume_down"),
+        disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_up"),
         disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
     ]
 
@@ -863,11 +926,10 @@ async def send_control_buttons(ctx, embed):
 
     await ctx.send(embed=embed, view=button_row)
 
-    button_row.children[0].callback = lambda i: pause_callback(i, ctx)
-    button_row.children[1].callback = lambda i: resume_callback(i, ctx)
-    button_row.children[2].callback = lambda i: volume_change_callback(i, ctx, 0.1)
-    button_row.children[3].callback = lambda i: volume_change_callback(i, ctx, -0.1)
-    button_row.children[4].callback = lambda i: change_song_callback(i, ctx)
+    button_row.children[0].callback = lambda ctx: pause_callback(ctx)
+    button_row.children[1].callback = lambda ctx: resume_callback(ctx)
+    button_row.children[2].callback = lambda ctx: volume_change_callback(ctx)
+    button_row.children[3].callback = lambda ctx: change_song_callback(ctx)
 
 async def pause_callback(ctx):
     ctx.guild.voice_client.pause()
@@ -880,31 +942,13 @@ async def resume_callback(ctx):
     else:
         await ctx.send("현재 재생 중인 음악이 없습니다.", ephemeral=True)
 
-async def volume_change_callback(ctx, change):
-    if ctx.guild.voice_client.source:
-        new_volume = min(max(ctx.guild.voice_client.source.volume + change, 0.0), 1.0)
-        ctx.guild.voice_client.source.volume = new_volume
-        await ctx.send(f"현재 음량: {new_volume:.1f}", ephemeral=True)
+async def volume_change_callback(ctx):
+    modal = VolumeChangeModal()
+    await ctx.response.send_modal(modal)
 
 async def change_song_callback(ctx):
-    await ctx.send("변경할 음악의 유튜브 링크 또는 음악 제목을 입력해주세요:", ephemeral=True)
-
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel
-
-    try:
-        msg = await bot.wait_for('message', check=check, timeout=30.0)
-        new_url_or_name = msg.content
-        new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
-
-        ctx.guild.voice_client.stop()
-        ctx.guild.voice_client.play(new_player)
-
-        change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
-        await ctx.followup.send(embed=change_embed, ephemeral=True)
-
-    except asyncio.TimeoutError:
-        await ctx.followup.send("시간이 초과되었습니다. 다시 시도해주세요.", ephemeral=True)
+    modal = MusicChangeModal()
+    await ctx.response.send_modal(modal)
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -3179,37 +3223,37 @@ class StockView(disnake.ui.View):
 
         return embed
 
-def get_stock_data(stock_name):
+async def get_stock_data(stock_name):
     # 데이터베이스에 연결
     db_path = os.path.join('system_database', 'economy.db')
-    conn = aiosqlite.connect(db_path)
-    cursor = conn.cursor()
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.cursor() as cursor:
+            # 주식 정보를 가져오는 쿼리 실행
+            await cursor.execute("SELECT price FROM stock WHERE name = ?", (stock_name,))
+            result = await cursor.fetchone()
+            
+            if result:
+                return result[0]  # 가격 반환
+            else:
+                return None  # 주식이 없으면 None 반환
 
-    try:
-        # 주식 정보를 가져오는 쿼리 실행
-        cursor.execute("SELECT price FROM stock WHERE name = ?", (stock_name,))
-        result = cursor.fetchone()
-        
-        if result:
-            return result[0]  # 가격 반환
-        else:
-            return None  # 주식이 없으면 None 반환
-    finally:
-        conn.close()  # 연결 종료
 async def get_stock_price(stock_name):
     # 주식 심볼을 대문자로 변환
     stock_symbol = stock_name.upper()
     
     # 데이터베이스에서 주식 가격 가져오기
-    stock_price = get_stock_data(stock_symbol)
+    stock_price = await get_stock_data(stock_symbol)  # 비동기 호출로 변경
     
     return stock_price  # 주식 가격 반환
 
 async def getuser_stock(user_id):
-    stocks = await get_stock_data(user_id)
-    if not stocks:
-        return None  # 주식이 없으면 None 반환
-    return stocks
+    # 사용자 ID로 주식 정보를 가져오는 쿼리 실행
+    db_path = os.path.join('system_database', 'economy.db')
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT stock_name, quantity FROM user_stock WHERE user_id = ?", (user_id,))
+            stocks = await cursor.fetchall()
+            return stocks if stocks else None  # 주식이 없으면 None 반환
 
 @bot.slash_command(name="주식통장", description="보유중인 주식을 확인합니다.")
 async def stock_wallet(ctx: disnake.CommandInteraction):
@@ -3220,7 +3264,7 @@ async def stock_wallet(ctx: disnake.CommandInteraction):
     if not await member_status(ctx):
         return
 
-    stocks = await getuser_stock(ctx.author.id)
+    stocks = await getuser_stock(ctx.author.id)  # 수정된 getuser_stock 호출
 
     user_name = ctx.author.name
 
@@ -4414,12 +4458,51 @@ async def koreabots():
             if response.status == 200:
                 data = await response.json()
 
+async def update_coin_prices():
+    db_path = os.path.join('system_database', 'economy.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    aiocursor = await economy_aiodb.cursor()
+    await aiocursor.execute("SELECT name, price FROM coin")
+    coins = await aiocursor.fetchall()
+
+    for coin in coins:
+        name, price = coin
+        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
+        new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가
+        new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가
+        new_price = int(new_price)
+        await aiocursor.execute("UPDATE coin SET price = ? WHERE name = ?", (new_price, name))
+        await economy_aiodb.commit()
+    
+    await aiocursor.close()
+    await economy_aiodb.close()
+
+async def update_stock_prices():
+    db_path = os.path.join('system_database', 'economy.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    aiocursor = await economy_aiodb.cursor()
+    await aiocursor.execute("SELECT name, price FROM stock")
+    stocks = await aiocursor.fetchall()
+
+    for stock in stocks:
+        name, price = stock
+        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
+        new_price = min(new_price, 5000000)  # 주식 가격 상한가
+        new_price = max(new_price, 5000)  # 주식 가격 하한가
+        new_price = int(new_price)
+        await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (new_price, name))
+        await economy_aiodb.commit()
+
+    await aiocursor.close()
+    await economy_aiodb.close()
+    
 @tasks.loop()
 async def periodic_price_update():
     while True:
         await update_stock_prices()
         await update_coin_prices()
         await asyncio.sleep(20)
+        print("주가변동")
 
 periodic_price_update.start()
 
