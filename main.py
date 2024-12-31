@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager, rc
 
 #intents = disnake.Intents.all()
-bot = commands.Bot(command_prefix="/") #intents=intents)
+bot = commands.AutoShardedBot(command_prefix="/", shard_count=4) #intents=intents)
 token = sec.token
 developer = int(sec.developer_id)
 
@@ -76,6 +76,20 @@ async def check_permissions(ctx):
 
     return True  # 모든 권한 체크가 통과되었을 경우
 ##################################################################################################
+@bot.slash_command(name="카운트다운", description="2025 카운트다운")
+async def countdown(ctx):
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "카운트다운")
+    await ctx.response.defer(ephemeral=False)
+    embed = disnake.Embed(title="2025 카운트다운", color=embedcolor)
+    embed.description = "2025년 1월 1일까지 남은 시간을 표시합니다."
+    now = datetime.now()
+    target = datetime(2025, 1, 1)
+    remaining = target - now
+    embed.add_field(name="남은 시간", value=str(remaining), inline=False)
+    await ctx.send(embed=embed)
+
 # 지역코드
 region_codes = {
     "서울특별시": "B10",
@@ -1593,7 +1607,7 @@ async def earn_money(ctx):
     cooldowns = load_cooldowns()
     last_execution_time = cooldowns.get(str(ctx.author.id), 0)
     current_time = time.time()
-    cooldown_time = 600
+    cooldown_time = 300
     if current_time - last_execution_time < cooldown_time:
         remaining_time = round(cooldown_time - (current_time - last_execution_time))
         embed = disnake.Embed(color=embederrorcolor)
@@ -1603,7 +1617,8 @@ async def earn_money(ctx):
     cooldowns[str(ctx.author.id)] = current_time
     save_cooldowns(cooldowns)
     
-    await ctx.response.send_modal(modal=Earn_Modal())
+    if not ctx.response.is_done():
+        await ctx.response.send_modal(modal=Earn_Modal())
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
@@ -3524,6 +3539,7 @@ async def bot_info(ctx):
     embed = disnake.Embed(title="봇 정보", color=embed_color)
     embed.add_field(name="서버수", value=f"{len(bot.guilds)}", inline=True)
     embed.add_field(name="유저수", value=f"{total_members:,}", inline=True)
+    embed.add_field(name="샤드수", value=f"{bot.shard_count}", inline=True)
     embed.add_field(name="", value="", inline=False)
     embed.add_field(name="업타임", value=f"{get_uptime()}", inline=True)
     embed.add_field(name="개발자", value=f"{sec.developer_name}", inline=True)
@@ -4449,8 +4465,25 @@ def get_uptime():
 async def on_ready():
     print("\n봇 온라인!")
     print(f'{bot.user.name}')
+    print(f'샤드 : {bot.shard_count}')
     change_status.start()
     koreabots.start()
+
+@bot.event
+async def on_shard_ready(shard_id):
+    print(f"Shard {shard_id} is ready")
+
+@bot.event
+async def on_shard_connect(shard_id):
+    print(f"Shard {shard_id} has connected")
+
+@bot.event
+async def on_shard_disconnect(shard_id):
+    print(f"Shard {shard_id} has disconnected")
+
+@bot.event
+async def on_shard_resumed(shard_id):
+    print(f"Shard {shard_id} has resumed")
 
 @bot.event
 async def on_guild_join(guild):
