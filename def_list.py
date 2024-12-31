@@ -227,7 +227,7 @@ async def handle_database(ctx, kind: str, id: int, is_role: bool = False):
     
     return embed
 
-async def command_use_log(ctx, command):
+async def command_use_log(ctx, command, command_value):
     db_path = os.path.join('system_database', 'command.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     # 한국 표준시(KST) 타임존 가져오기
@@ -240,7 +240,7 @@ async def command_use_log(ctx, command):
     user_id = ctx.author.id
     
     # SQL 쿼리 수정: guild_id와 user_id 추가
-    aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, timestamp) VALUES (?, ?, ?, ?)", (guild_id, user_id, command, current_time))
+    aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, value, time) VALUES (?, ?, ?, ?, ?)", (guild_id, user_id, command, command_value, current_time))
     await economy_aiodb.commit()
     await aiocursor.close()
 
@@ -664,7 +664,7 @@ async def removeuser_coin(user_id, _name, _count):
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
-            await aiocursor.execute("SELECT count FROM user_coin WHERE id = ? AND name = ?", (user_id, _name))
+            await aiocursor.execute("SELECT count FROM user_coin WHERE id = ? AND stock_name = ?", (user_id, _name))
             user_coin = await aiocursor.fetchone()
 
             # 사용자가 보유 중인 가상화폐가 없거나 판매하려는 개수가 보유 개수를 초과하면 예외 발생
@@ -672,12 +672,12 @@ async def removeuser_coin(user_id, _name, _count):
                 raise ValueError(f"{_name} 가상화폐를 충분히 보유하고 있지 않습니다. 현재 보유 개수: {user_coin[0] if user_coin else 0}")
 
             # 가상화폐를 판매하고 돈을 지급합니다.
-            await aiocursor.execute("UPDATE user_coin SET count = count - ? WHERE id = ? AND name = ?", (_count, user_id, _name))
+            await aiocursor.execute("UPDATE user_coin SET count = count - ? WHERE id = ? AND stock_name = ?", (_count, user_id, _name))
             new_count = user_coin[0] - _count
 
             # 가상화폐의 개수가 0이면 레코드를 삭제합니다.
             if new_count == 0:
-                await aiocursor.execute("DELETE FROM user_coin WHERE id = ? AND name = ?", (user_id, _name))
+                await aiocursor.execute("DELETE FROM user_coin WHERE id = ? AND stock_name = ?", (user_id, _name))
 
             await economy_aiodb.commit()
 
@@ -689,15 +689,15 @@ async def addstock(_name, _price):
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
             # 주식이 이미 존재하는지 확인
-            await aiocursor.execute("SELECT price FROM stock WHERE name = ?", (_name,))
+            await aiocursor.execute("SELECT price FROM stock WHERE stock_name = ?", (_name,))
             existing_stock = await aiocursor.fetchone()
 
             if existing_stock:
                 # 주식이 존재하면 가격을 업데이트
-                await aiocursor.execute("UPDATE stock SET price = ? WHERE name = ?", (_price, _name))
+                await aiocursor.execute("UPDATE stock SET price = ? WHERE stock_name = ?", (_price, _name))
             else:
                 # 주식이 존재하지 않으면 새로운 주식 추가
-                await aiocursor.execute("INSERT INTO stock (name, price) VALUES (?, ?)", (_name, _price))
+                await aiocursor.execute("INSERT INTO stock (stock_name, price) VALUES (?, ?)", (_name, _price))
 
             await economy_aiodb.commit()
 
@@ -705,7 +705,7 @@ async def getstock():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, price FROM stock")
+    await aiocursor.execute("SELECT stock_name, price FROM stock")
     data = await aiocursor.fetchall()
     await aiocursor.close()
     return data
@@ -714,7 +714,7 @@ async def removestock(_name):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("DELETE FROM stock WHERE name=?", (_name, ))
+    await aiocursor.execute("DELETE FROM stock WHERE stock_name=?", (_name, ))
     await economy_aiodb.commit()
     await aiocursor.close()
 
@@ -741,16 +741,16 @@ async def adduser_stock(user_id, _name, _count):
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
             # 사용자가 보유한 동일한 주식이 있는지 확인
-            await aiocursor.execute("SELECT count FROM user_stock WHERE id = ? AND name = ?", (user_id, _name))
+            await aiocursor.execute("SELECT count FROM user_stock WHERE id = ? AND stock_name = ?", (user_id, _name))
             existing_stock = await aiocursor.fetchone()
 
             if existing_stock:
                 # 주식이 존재하면 개수를 업데이트
                 new_count = existing_stock[0] + _count
-                await aiocursor.execute("UPDATE user_stock SET count = ? WHERE id = ? AND name = ?", (new_count, user_id, _name))
+                await aiocursor.execute("UPDATE user_stock SET count = ? WHERE id = ? AND stock_name = ?", (new_count, user_id, _name))
             else:
                 # 주식이 존재하지 않으면 새로운 주식 추가
-                await aiocursor.execute("INSERT INTO user_stock (id, name, count) VALUES (?, ?, ?)", (user_id, _name, _count))
+                await aiocursor.execute("INSERT INTO user_stock (id, stock_name, count) VALUES (?, ?, ?)", (user_id, _name, _count))
 
             await economy_aiodb.commit()
 
@@ -758,7 +758,7 @@ async def getuser_stock(user_id):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, count FROM user_stock WHERE id=?", (user_id,))
+    await aiocursor.execute("SELECT stock_name, count FROM user_stock WHERE id=?", (user_id,))
     data = await aiocursor.fetchall()
     await aiocursor.close()
     return data
@@ -777,7 +777,7 @@ async def removeuser_stock(user_id, _name, _count):
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
-            await aiocursor.execute("SELECT count FROM user_stock WHERE id = ? AND name = ?", (user_id, _name))
+            await aiocursor.execute("SELECT count FROM user_stock WHERE id = ? AND stock_name = ?", (user_id, _name))
             user_stock = await aiocursor.fetchone()
 
             # 사용자가 보유 중인 주식이 없거나 판매하려는 개수가 보유 개수를 초과하면 예외 발생
@@ -785,12 +785,12 @@ async def removeuser_stock(user_id, _name, _count):
                 raise ValueError(f"{_name} 주식을 충분히 보유하고 있지 않습니다. 현재 보유 개수: {user_stock[0] if user_stock else 0}")
 
             # 주식을 판매하고 돈을 지급합니다.
-            await aiocursor.execute("UPDATE user_stock SET count = count - ? WHERE id = ? AND name = ?", (_count, user_id, _name))
+            await aiocursor.execute("UPDATE user_stock SET count = count - ? WHERE id = ? AND stock_name = ?", (_count, user_id, _name))
             new_count = user_stock[0] - _count
 
             # 주식의 개수가 0이면 레코드를 삭제합니다.
             if new_count == 0:
-                await aiocursor.execute("DELETE FROM user_stock WHERE id = ? AND name = ?", (user_id, _name))
+                await aiocursor.execute("DELETE FROM user_stock WHERE id = ? AND stock_name = ?", (user_id, _name))
 
             await economy_aiodb.commit()
 

@@ -1,4 +1,3 @@
-import sys
 import security as sec
 from sdk.api.message import Message
 from sdk.exceptions import CoolsmsException
