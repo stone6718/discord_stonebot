@@ -1603,10 +1603,7 @@ async def earn_money(ctx):
     cooldowns[str(ctx.author.id)] = current_time
     save_cooldowns(cooldowns)
     
-    try:
-        await ctx.response.send_modal(modal=Earn_Modal())
-    except disnake.errors.InteractionResponded:
-        print("This interaction has already been responded to before.")
+    await ctx.response.send_modal(modal=Earn_Modal())
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
