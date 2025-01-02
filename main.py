@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager, rc
 
 #intents = disnake.Intents.all()
-bot = commands.AutoShardedBot(command_prefix="/", shard_count=4) #intents=intents)
+bot = commands.AutoShardedBot(command_prefix="/", shard_count=2) #intents=intents)
 token = sec.token
 developer = int(sec.developer_id)
 
@@ -76,20 +76,6 @@ async def check_permissions(ctx):
 
     return True  # 모든 권한 체크가 통과되었을 경우
 ##################################################################################################
-@bot.slash_command(name="카운트다운", description="2025 카운트다운")
-async def countdown(ctx):
-    if not await check_permissions(ctx):
-        return
-    await command_use_log(ctx, "카운트다운")
-    await ctx.response.defer(ephemeral=False)
-    embed = disnake.Embed(title="2025 카운트다운", color=embedcolor)
-    embed.description = "2025년 1월 1일까지 남은 시간을 표시합니다."
-    now = datetime.now()
-    target = datetime(2025, 1, 1)
-    remaining = target - now
-    embed.add_field(name="남은 시간", value=str(remaining), inline=False)
-    await ctx.send(embed=embed)
-
 # 지역코드
 region_codes = {
     "서울특별시": "B10",
