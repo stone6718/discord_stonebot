@@ -685,7 +685,7 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
     # 음성 채널에 연결
     voice_channel = ctx.author.voice.channel if ctx.author.voice else None
     if voice_channel is None:
-        return await ctx.send("음성 채널에 들어가야 합니다.", ephemeral=True)
+        return await ctx.response.send_message("음성 채널에 들어가야 합니다.", ephemeral=True)
 
     # 현재 연결된 음성 클라이언트가 있는지 확인
     voice_client = disnake.utils.get(bot.voice_clients, guild=ctx.guild)
@@ -704,7 +704,7 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
         voice_client.play(disnake.FFmpegPCMAudio(f"{tmp_file.name}.mp3"))
 
         embed = disnake.Embed(title="TTS 재생", description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**", color=0x00ff00)
-        await ctx.send(embed=embed, ephemeral=True)
+        await ctx.response.send_message(embed=embed, ephemeral=True)
 
         # 재생이 끝날 때까지 대기
         while voice_client.is_playing():
