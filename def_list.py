@@ -1,6 +1,6 @@
 import json, smtplib, os, openai, pytz, random
 import aiosqlite, disnake, requests, aiohttp
-from security import sec
+import security as sec
 from datetime import datetime
 from googletrans import Translator
 from email.utils import formatdate
@@ -42,7 +42,7 @@ async def command_use_log(ctx, command, command_value):
     aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, value, time) VALUES (?, ?, ?, ?, ?)", (guild_id, user_id, command, command_value, current_time))
     await economy_aiodb.commit()
     await aiocursor.close()
-    await send_webhook_message(f"사용자 : {ctx}\n명령어 : {command}\n value : {command_value}")
+    await send_webhook_message(f"서버 : {guild_id}\n사용자 : {user_id}\n명령어 : {command}\n value : {command_value}")
 
 # 급식 정보를 캐싱하기 위한 딕셔너리
 meal_cache = {}        # 급식메뉴
