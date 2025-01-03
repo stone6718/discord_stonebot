@@ -22,9 +22,10 @@ smtp_password = sec.smtp_password
 nice_api_key = sec.nice_api_key
 
 async def send_webhook_message(content):
+    embed = disnake.Embed(title="스톤봇 로그", description=content, color=embedcolor)
     async with aiohttp.ClientSession() as session:
         webhook = disnake.Webhook.from_url(sec.WEBHOOK_URL, session=session)
-        await webhook.send(content)
+        await webhook.send(embed=embed)
 
 async def command_use_log(ctx, command, command_value):
     db_path = os.path.join('system_database', 'command.db')
