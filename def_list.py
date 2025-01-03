@@ -1,5 +1,6 @@
 import json, smtplib, os, openai, pytz, random
-import aiosqlite, disnake, security, requests
+import aiosqlite, disnake, requests, aiohttp
+from security import sec
 from datetime import datetime
 from googletrans import Translator
 from email.utils import formatdate
@@ -14,11 +15,34 @@ embedsuccess = 0x00ff00
 embederrorcolor = 0xff0000
 
 cooldown_file = "system_database/cooldowns.txt"
-smtp_server = security.smtp_server
-smtp_user = security.smtp_user
-smtp_password = security.smtp_password
+smtp_server = sec.smtp_server
+smtp_user = sec.smtp_user
+smtp_password = sec.smtp_password
 
-nice_api_key = security.nice_api_key
+nice_api_key = sec.nice_api_key
+
+async def send_webhook_message(content):
+    async with aiohttp.ClientSession() as session:
+        webhook = disnake.Webhook.from_url(sec.WEBHOOK_URL, session=session)
+        await webhook.send(content)
+
+async def command_use_log(ctx, command, command_value):
+    db_path = os.path.join('system_database', 'command.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    # 한국 표준시(KST) 타임존 가져오기
+    kst = pytz.timezone('Asia/Seoul')
+    # 현재 시간을 KST로 가져오기
+    current_time = datetime.now(kst).isoformat()
+    
+    # 서버 ID와 사용자 ID 가져오기
+    guild_id = ctx.guild.id
+    user_id = ctx.author.id
+    
+    # SQL 쿼리 수정: guild_id와 user_id 추가
+    aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, value, time) VALUES (?, ?, ?, ?, ?)", (guild_id, user_id, command, command_value, current_time))
+    await economy_aiodb.commit()
+    await aiocursor.close()
+    await send_webhook_message(f"사용자 : {ctx}\n명령어 : {command}\n value : {command_value}")
 
 # 급식 정보를 캐싱하기 위한 딕셔너리
 meal_cache = {}        # 급식메뉴
@@ -227,30 +251,13 @@ async def handle_database(ctx, kind: str, id: int, is_role: bool = False):
     
     return embed
 
-async def command_use_log(ctx, command, command_value):
-    db_path = os.path.join('system_database', 'command.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
-    # 한국 표준시(KST) 타임존 가져오기
-    kst = pytz.timezone('Asia/Seoul')
-    # 현재 시간을 KST로 가져오기
-    current_time = datetime.now(kst).isoformat()
-    
-    # 서버 ID와 사용자 ID 가져오기
-    guild_id = ctx.guild.id
-    user_id = ctx.author.id
-    
-    # SQL 쿼리 수정: guild_id와 user_id 추가
-    aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, value, time) VALUES (?, ?, ?, ?, ?)", (guild_id, user_id, command, command_value, current_time))
-    await economy_aiodb.commit()
-    await aiocursor.close()
-
 def translate_product(df):
     translator = Translator()
     df['Trans_result'] = df['Before_Trans'].apply(lambda x: translator.translate(x, dest='en').text)
     df['Language'] = df['Before_Trans'].apply(lambda x: translator.detect(x).lang)
     return df
 
-openai.api_key = security.OpenAI_api_key
+openai.api_key = sec.OpenAI_api_key
 
 def get_gpt_response(prompt, model):
     try:
@@ -331,7 +338,7 @@ async def use_user_credit(user_id, amount):
         await conn.commit()
 
 def send(username, content, avatar_url, url):
-    webhook = DiscordWebhook(url=f'{security.webhook}', content=f'{content}', username=f'{username}', avatar_url=f'{avatar_url}')
+    webhook = DiscordWebhook(url=f'{sec.webhook}', content=f'{content}', username=f'{username}', avatar_url=f'{avatar_url}')
     webhook.execute()
 
 async def fetch_user_data(user_id: int):
@@ -1109,7 +1116,7 @@ async def delete_server_database(guild_id):
 
 def send_email(recipient, verifycode):
     msg = MIMEMultipart()
-    msg['From'] = str(Address("NET CLOUD", addr_spec=security.smtp_user))  
+    msg['From'] = str(Address("NET CLOUD", addr_spec=sec.smtp_user))  
     msg['To'] = recipient
     msg['Subject'] = 'NET CLOUD 이메일 인증'
     msg['Date'] = formatdate(localtime=True)
@@ -1147,9 +1154,9 @@ def send_email(recipient, verifycode):
     
     msg.attach(MIMEText(body, 'html'))
     
-    with smtplib.SMTP(security.smtp_server, 587) as server:
+    with smtplib.SMTP(sec.smtp_server, 587) as server:
         server.starttls()
-        server.login(security.smtp_user, security.smtp_password)
+        server.login(sec.smtp_user, sec.smtp_password)
         server.send_message(msg)
 
 # 쿨다운 정보를 로드하는 함수

@@ -825,11 +825,6 @@ class MusicChangeModal(Modal):
 waiting_songs = defaultdict(list)
 voice_clients = {}
 
-async def send_webhook_message(content):
-    async with aiohttp.ClientSession() as session:
-        webhook = disnake.Webhook.from_url(sec.WEBHOOK_URL, session=session)
-        await webhook.send(content)
-
 @bot.slash_command(name='재생', description='유튜브 링크 또는 제목으로 음악을 재생합니다.')
 async def play(ctx, url_or_name: str):
     await ctx.response.defer()
@@ -4388,6 +4383,7 @@ async def handle_dm_message(message):
 
     await message.add_reaction("✅")
     print("문의가 접수되었습니다.")
+    await send_webhook_message("문의가 접수되었습니다.")
 
     # 첨부 파일 처리
     await handle_attachments(message)
@@ -4454,32 +4450,39 @@ async def on_ready():
     print(f'샤드 : {bot.shard_count}')
     change_status.start()
     koreabots.start()
+    await send_webhook_message("봇이 온라인 상태입니다.")
 
 @bot.event
 async def on_shard_ready(shard_id):
-    print(f"Shard {shard_id} is ready")
+    print(f"{shard_id} 샤드가 준비되었습니다.")
+    await send_webhook_message(f"{shard_id} 샤드가 준비되었습니다.")
 
 @bot.event
 async def on_shard_connect(shard_id):
-    print(f"Shard {shard_id} has connected")
+    print(f"{shard_id} 샤드가 연결되었습니다.")
+    await send_webhook_message(f"{shard_id} 샤드가 연결되었습니다.")
 
 @bot.event
 async def on_shard_disconnect(shard_id):
-    print(f"Shard {shard_id} has disconnected")
+    print(f"{shard_id} 샤드의 연결이 끊어졌습니다.")
+    await send_webhook_message(f"{shard_id} 샤드의 연결이 끊어졌습니다.")
 
 @bot.event
 async def on_shard_resumed(shard_id):
-    print(f"Shard {shard_id} has resumed")
+    print(f"{shard_id} 샤드가 다시 연결되었습니다.")
+    await send_webhook_message(f"{shard_id} 샤드가 다시 연결되었습니다.")
 
 @bot.event
 async def on_guild_join(guild):
     await database_create_server_join(guild.id)
     print(f'새로운 서버에 입장했습니다: {guild.name} (ID: {guild.id})')
+    await send_webhook_message(f"새로운 서버에 입장했습니다: {guild.name} (ID: {guild.id})")
 
 @bot.event
 async def on_guild_remove(guild):
     await delete_server_database(guild.id)
     print(f'서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})')
+    await send_webhook_message(f"서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})")
 
 @tasks.loop(seconds=3)
 async def change_status():
@@ -4550,7 +4553,8 @@ async def periodic_price_update():
         await update_stock_prices()
         await update_coin_prices()
         await asyncio.sleep(20)
-        print("주가변동")
+        print("주가 변동")
+        await send_webhook_message("주가 변동")
 
 periodic_price_update.start()
 
@@ -4566,6 +4570,7 @@ async def reset_check_in_status():
             await conn.commit()
         
         print("모든 사용자의 체크인 상태가 초기화되었습니다.")
+        await send_webhook_message("모든 사용자의 체크인 상태가 초기화되었습니다.")
 
 reset_check_in_status.start()
 
@@ -4661,6 +4666,7 @@ async def draw_lottery():
         await db.execute('DELETE FROM lottery')
         await db.commit()
         print("로또 데이터가 삭제되었습니다.")
+        await send_webhook_message("로또 추첨이 완료되었습니다.")
 
 # 설정
 limit_level = 1000  # 최대 레벨
@@ -4766,6 +4772,7 @@ async def grant_scheduled_credits():
                 amount = calculate_credit(user_class)
                 await add_user_credit(user_id, amount)
                 print(f"{amount} 크레딧이 {user_id}에게 부여되었습니다.")
+                await send_webhook_message(f"{amount} 크레딧이 {user_id}에게 부여되었습니다.")
                 scheduled_credits[user_id] = (amount)  # 유지
 
 grant_scheduled_credits.start()
