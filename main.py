@@ -4416,7 +4416,7 @@ async def handle_dm_message(message):
     reply_button.callback = reply_button_callback
 
     # 버튼을 포함하는 뷰 생성
-    view = View()
+    view = View(timeout=None)
     view.add_item(reply_button)
 
     # 특정 채널로 전송
