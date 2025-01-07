@@ -1911,7 +1911,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
 
     # 승리 데이터 업데이트
-    db_path = os.path.join('system_database', 'baccarat.db')
+    db_path = os.path.join('system_database', 'log.db')
 
     try:
         conn = await aiosqlite.connect(db_path)  # db는 데이터베이스 파일의 경로입니다.
@@ -1958,7 +1958,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
 
 @bot.slash_command(name="바카라_분석", description="분석 데이터를 그래프로 보여줍니다.")
 async def baccarat(ctx):
-    db_path = os.path.join('system_database', 'baccarat.db')
+    db_path = os.path.join('system_database', 'log.db')
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -2997,8 +2997,8 @@ async def coin_list(ctx):
     view = CoinView1(data)
 
     # 태스크가 이미 실행 중인지 확인
-    if view_update2.is_running():
-        view_update2.stop()  # 실행 중이면 중지
+    if not view_update2.is_running():
+        view_update2.start(view)  # 태스크 시작
 
     embed = await view.create_embed()
     view.message = await ctx.send(embed=embed, view=view)
