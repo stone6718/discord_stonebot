@@ -21,7 +21,7 @@ from matplotlib import font_manager, rc
 #intents = disnake.Intents.all()
 bot = commands.AutoShardedBot(command_prefix="/", shard_count=2) #intents=intents)
 token = sec.token
-developer = int(sec.developer_id)
+developer = [int(dev_id) for dev_id in sec.developer_id]
 
 # 시작 시간 기록
 start_time = datetime.now()
@@ -1530,7 +1530,7 @@ async def money_ranking(ctx):
     await command_use_log(ctx, "돈순위", None)
     limit = 10
 
-    excluded_ids = developer if isinstance(developer, list) else [developer]
+    excluded_ids = [id for id in developer] if isinstance(developer, list) else [developer]
     richest_users = await fetch_money_ranking(excluded_ids, limit)
 
     if not richest_users:
@@ -2078,7 +2078,7 @@ async def license_code_add(ctx, code: str = commands.Param(name="코드", choice
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코드추가", f"{code}, {date}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         # 기간을 일 단위로 받아서 설정
         if date <= 0:
             embed = disnake.Embed(color=embederrorcolor)
@@ -2117,7 +2117,7 @@ async def license_code_remove(ctx, code: str):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코드삭제", f"{code}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         db_path = os.path.join('system_database', 'membership.db')
         economy_aiodb = await aiosqlite.connect(db_path)  # 데이터베이스 연결
 
@@ -3873,7 +3873,7 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
 @bot.slash_command(name="수동추첨", description="로또를 자동으로 추첨합니다. [개발자전용]")
 async def manual_lottery_draw(ctx):
     # 개발자 ID 확인
-    if ctx.author.id != developer:
+    if ctx.author.id not in developer:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="이 명령어는 개발자만 사용할 수 있습니다.")
         await ctx.send(embed=embed)
@@ -3967,7 +3967,7 @@ async def money_edit(ctx, member_id: str = commands.Param(name="유저"), choice
         return
     await command_use_log(ctx, "돈관리", f"{member_id}, {choice}, {money}")
     
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         # 멘션 또는 ID에서 사용자 ID 추출
         user = ctx.author if member_id is None else await bot.fetch_user(member_id)
         if user is None:
@@ -4017,7 +4017,7 @@ async def use_limit(ctx, user: disnake.Member = commands.Param(name="유저"), r
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "이용제한", f"{user}, {reason}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         if reason is None:
             reason = "없음"
         db_path = os.path.join('system_database', 'economy.db')
@@ -4057,7 +4057,7 @@ async def use_limit_release(ctx, user: disnake.Member = commands.Param(name="유
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "제한해제", f"{user}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         db_path = os.path.join('system_database', 'economy.db')
         economy_aiodb = await aiosqlite.connect(db_path)
         aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (user.id,))
@@ -4092,7 +4092,7 @@ async def item_management(ctx, item_name: str, choice: str = commands.Param(name
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "아이템관리", f"{item_name}, {item_price}, {item_damage}, {item_exp}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         if choice == "추가":
             await add_item(item_name, item_price, item_damage, item_exp)
             embed = disnake.Embed(color=embedsuccess)
@@ -4115,7 +4115,7 @@ async def coin_management(ctx, _name: str, choice: str = commands.Param(name="�
         return
     await command_use_log(ctx, "가상화폐관리", f"{_name}, {_price}")
     
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         try:
             if choice == "추가":
                 await addcoin(_name, _price)
@@ -4142,7 +4142,7 @@ async def stock_management(ctx, _name: str, choice: str = commands.Param(name="�
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "주식관리", f"{_name}, {_price}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         if choice == "추가":
             await addstock(_name, _price)
             price = int(_price)
@@ -4164,7 +4164,7 @@ async def developer_notification(ctx, content: str = commands.Param(name="내용
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "개발자_공지", f"{content}")
-    if ctx.author.id == developer:
+    if ctx.author.id in developer:
         for guild in bot.guilds:
             server_remove_date = datetime.now()
             embed1 = disnake.Embed(title="개발자 공지", description=f"```{content}```", color=embedcolor)
@@ -4223,7 +4223,7 @@ async def inquire_answer(ctx, member: str, message: str):
         return
 
     # 개발자 ID 확인
-    if ctx.author.id != developer:
+    if ctx.author.id not in developer:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="이 명령어는 개발자만 사용할 수 있습니다.")
         await ctx.edit_original_response(embed=embed)
@@ -4344,7 +4344,7 @@ class inquiry_Modal(disnake.ui.Modal):
         key1 = ctx.text_values['text2']
         
         # 개발자 ID 확인
-        if ctx.author.id != developer:
+        if ctx.author.id not in developer:
             embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="이 명령어는 개발자만 사용할 수 있습니다.")
             await ctx.edit_original_response(embed=embed)
