@@ -308,7 +308,7 @@ async def meal(ctx,
 
 @bot.slash_command(name="날씨", description="날씨를 볼 수 있습니다.")
 async def weather(ctx, region: str = commands.Param(name="지역", description="지역을 입력하세요.")):
-    if not await check_permissions(ctx):
+    if ctx.guild is None or not await check_permissions(ctx):
         return
     await command_use_log(ctx, "날씨", f"{region}")
     await ctx.response.defer(ephemeral=False)
@@ -1560,7 +1560,7 @@ class Earn_Modal(disnake.ui.Modal):
         ]
         super().__init__(title="일하기", components=components)
 
-    async def callback(self, ctx):
+    async def callback(self, ctx: disnake.ModalInteraction):
         global key, global_result
 
         key = ctx.text_values['text1']
@@ -1578,6 +1578,13 @@ class Earn_Modal(disnake.ui.Modal):
             embed.add_field(name="❌ 오류", value="틀렸습니다! 다음기회에 도전해주세요!")
             await ctx.send(embed=embed, ephemeral=True)
 
+class EarnButton(disnake.ui.Button):
+    def __init__(self):
+        super().__init__(label="문제 풀기", style=ButtonStyle.primary)
+
+    async def callback(self, interaction: disnake.MessageInteraction):
+        await interaction.response.send_modal(modal=Earn_Modal())
+
 @bot.slash_command(name="일하기", description="간단한 문제풀이로 10,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
     if not await check_permissions(ctx):
@@ -1585,21 +1592,25 @@ async def earn_money(ctx):
     await command_use_log(ctx, "일하기", None)
     if not await member_status(ctx):
         return
+    
     cooldowns = load_cooldowns()
     last_execution_time = cooldowns.get(str(ctx.author.id), 0)
     current_time = time.time()
-    cooldown_time = 300
+    cooldown_time = 180
+    
     if current_time - last_execution_time < cooldown_time:
         remaining_time = round(cooldown_time - (current_time - last_execution_time))
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="쿨타임", value=f"{ctx.author.mention}, {remaining_time}초 후에 다시 시도해주세요.")
         await ctx.send(embed=embed)
-        return
-    cooldowns[str(ctx.author.id)] = current_time
-    save_cooldowns(cooldowns)
-    
-    if not ctx.response.is_done():
-        await ctx.response.send_modal(modal=Earn_Modal())
+    else:
+        cooldowns[str(ctx.author.id)] = current_time
+        save_cooldowns(cooldowns)
+        
+        # 버튼을 포함한 응답
+        button = EarnButton()
+        embed = disnake.Embed(title="문제 풀이 시작!", description="아래 버튼을 눌러 문제를 풀어보세요.")
+        await ctx.send(embed=embed, components=[[button]])
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
@@ -4446,8 +4457,9 @@ def get_uptime():
 @bot.event
 async def on_ready():
     print("\n봇 온라인!")
-    print(f'{bot.user.name}')
+    print(f'봇 : {bot.user.name}')
     print(f'샤드 : {bot.shard_count}')
+    print(f'서버 수 : {len(bot.guilds)}')
     change_status.start()
     koreabots.start()
     await send_webhook_message("봇이 온라인 상태입니다.")
@@ -4509,20 +4521,34 @@ async def koreabots():
             if response.status == 200:
                 data = await response.json()
 
+async def log_price_history(asset_type, asset_name, price):
+    db_path = os.path.join('system_database', 'log.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    aiocursor = await economy_aiodb.cursor()
+    await aiocursor.execute(
+        "INSERT INTO price_history (asset_type, asset_name, price, date) VALUES (?, ?, ?, ?)",
+        (asset_type, asset_name, price, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    )
+    await economy_aiodb.commit()
+    await aiocursor.close()
+    await economy_aiodb.close()
+
 async def update_coin_prices():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT name, price FROM coin")
+    await aiocursor.execute("SELECT coin_name, price FROM coin")
     coins = await aiocursor.fetchall()
 
     for coin in coins:
         name, price = coin
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
+        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
         new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가
         new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가
         new_price = int(new_price)
-        await aiocursor.execute("UPDATE coin SET price = ? WHERE name = ?", (new_price, name))
+        
+        await aiocursor.execute("UPDATE coin SET price = ? WHERE coin_name = ?", (new_price, name))
+        await log_price_history('coin', name, new_price)  # 가격 기록 추가
         await economy_aiodb.commit()
     
     await aiocursor.close()
@@ -4537,11 +4563,13 @@ async def update_stock_prices():
 
     for stock in stocks:
         name, price = stock
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±20% 범위로 변경
+        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
         new_price = min(new_price, 5000000)  # 주식 가격 상한가
         new_price = max(new_price, 5000)  # 주식 가격 하한가
         new_price = int(new_price)
+        
         await aiocursor.execute("UPDATE stock SET price = ? WHERE stock_name = ?", (new_price, name))
+        await log_price_history('stock', name, new_price)  # 가격 기록 추가
         await economy_aiodb.commit()
 
     await aiocursor.close()
