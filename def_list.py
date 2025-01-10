@@ -38,12 +38,28 @@ async def command_use_log(ctx, command, command_value):
     # 서버 ID와 사용자 ID 가져오기
     guild_id = ctx.guild.id
     user_id = ctx.author.id
-    
-    # SQL 쿼리 수정: guild_id와 user_id 추가
+
     aiocursor = await economy_aiodb.execute("INSERT INTO command (guild_id, id, command, value, time) VALUES (?, ?, ?, ?, ?)", (guild_id, user_id, command, command_value, current_time))
     await economy_aiodb.commit()
     await aiocursor.close()
     await send_webhook_message(f"서버 : {guild_id}\n사용자 : {user_id}\n명령어 : {command}\n value : {command_value}")
+
+async def economy_log(ctx, command, result, money):
+    db_path = os.path.join('system_database', 'log.db')
+    economy_aiodb = await aiosqlite.connect(db_path)
+    # 한국 표준시(KST) 타임존 가져오기
+    kst = pytz.timezone('Asia/Seoul')
+    # 현재 시간을 KST로 가져오기
+    current_time = datetime.now(kst).isoformat()
+    
+    # 서버 ID와 사용자 ID 가져오기
+    guild_id = ctx.guild.id
+    user_id = ctx.author.id
+    
+    aiocursor = await economy_aiodb.execute("INSERT INTO economy (guild_id, id, command, result, money, time) VALUES (?, ?, ?, ?, ?, ?)", (guild_id, user_id, command, result, money, current_time))
+    await economy_aiodb.commit()
+    await aiocursor.close()
+    await send_webhook_message(f"서버 : {guild_id}\n사용자 : {user_id}\n명령어 : {command}\n결과 : {result}\n금액 : {money}")
 
 # 급식 정보를 캐싱하기 위한 딕셔너리
 meal_cache = {}        # 급식메뉴

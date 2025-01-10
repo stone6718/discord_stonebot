@@ -748,6 +748,7 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         self.title = data.get('title')
         self.url = data.get('url')
         self.thumbnail = data.get('thumbnail')
+        self.original = source  # self.original 설정
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
@@ -756,7 +757,8 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         if 'entries' in data:
             data = data['entries'][0]
         filename = data['url'] if stream else ydl.prepare_filename(data)
-        return cls(FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        source = FFmpegPCMAudio(filename, **ffmpeg_options)
+        return cls(source, data=data)
 
 class VolumeChangeModal(disnake.ui.Modal):
     def __init__(self):
@@ -821,6 +823,10 @@ class MusicChangeModal(Modal):
         except Exception as e:
             await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
             print(e)  # 오류 로그를 출력하여 문제를 확인할 수 있도록 합니다.
+
+def cleanup(self):
+    if hasattr(self, 'original'):
+        self.original.cleanup()
 
 waiting_songs = defaultdict(list)
 voice_clients = {}
@@ -1543,49 +1549,23 @@ async def money_ranking(ctx):
 
         await ctx.send(embed=embed)
 
-class Earn_Modal(disnake.ui.Modal):
-    def __init__(self):
-        num_A = random.randint(1, 11)
-        num_B = random.randint(2, 22)
-        global global_result
-        global_result = num_A + num_B
-        components = [
-            disnake.ui.TextInput(
-                label=f"{num_A} + {num_B} = ?",
-                placeholder="답을 입력해주세요(6자리)",
-                custom_id="text1",
-                style=TextInputStyle.short,
-                max_length=6
-            )
-        ]
-        super().__init__(title="일하기", components=components)
-
-    async def callback(self, ctx: disnake.ModalInteraction):
-        global key, global_result
-
-        key = ctx.text_values['text1']
-        random_add_money = random.randrange(10000, 100001)
-        random_add_money = int(round(random_add_money, -3))
-
-        if str(global_result) == key:
-            embed = disnake.Embed(color=embedsuccess)
-            await addmoney(ctx.author.id, random_add_money)
-            await add_exp(ctx.author.id, round(random_add_money / 300))
-            embed.add_field(name="정답", value=f"{ctx.author.mention}, {random_add_money:,}원이 지급되었습니다.")
-            await ctx.send(embed=embed)
-        else:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="틀렸습니다! 다음기회에 도전해주세요!")
-            await ctx.send(embed=embed, ephemeral=True)
-
 class EarnButton(disnake.ui.Button):
     def __init__(self):
-        super().__init__(label="문제 풀기", style=ButtonStyle.primary)
+        super().__init__(label="돈 받기", style=ButtonStyle.primary)
 
     async def callback(self, interaction: disnake.MessageInteraction):
-        await interaction.response.send_modal(modal=Earn_Modal())
+        global random_add_money
 
-@bot.slash_command(name="일하기", description="간단한 문제풀이로 10,000 ~ 100,000원을 얻습니다.")
+        random_add_money = random.randrange(30000, 100001)
+        random_add_money = int(round(random_add_money, -3))
+
+        embed = disnake.Embed(color=embedsuccess)
+        await addmoney(interaction.author.id, random_add_money)
+        await add_exp(interaction.author.id, round(random_add_money / 300))
+        embed.add_field(name="돈 지급", value=f"{interaction.author.mention}, {random_add_money:,}원이 지급되었습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.slash_command(name="일하기", description="버튼을 눌러 30,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
     if not await check_permissions(ctx):
         return
@@ -1603,14 +1583,18 @@ async def earn_money(ctx):
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="쿨타임", value=f"{ctx.author.mention}, {remaining_time}초 후에 다시 시도해주세요.")
         await ctx.send(embed=embed)
+        economy_log(ctx, "일하기", "0", 0)
     else:
         cooldowns[str(ctx.author.id)] = current_time
         save_cooldowns(cooldowns)
         
         # 버튼을 포함한 응답
         button = EarnButton()
-        embed = disnake.Embed(title="문제 풀이 시작!", description="아래 버튼을 눌러 문제를 풀어보세요.")
-        await ctx.send(embed=embed, components=[[button]])
+        view = disnake.ui.View()
+        view.add_item(button)
+        embed = disnake.Embed(title="돈 받기!", description="아래 버튼을 눌러 돈을 받으세요.")
+        await ctx.send(embed=embed, view=view)
+        economy_log(ctx, "일하기", "+", random_add_money)
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
@@ -1641,6 +1625,7 @@ async def check_in(ctx):
                 # 출석 체크하지 않은 상태
                 payment_amount = 200000  # 지급 금액
                 await addmoney(user_id, payment_amount)
+                await economy_log(ctx, "출석체크", "+", payment_amount)
 
                 # 출석 체크 상태 업데이트
                 await cursor.execute("UPDATE user SET checkin = 1 WHERE id = ?", (user_id,))
@@ -1653,6 +1638,7 @@ async def check_in(ctx):
                 embed = disnake.Embed(title="❌ 출석 체크 실패", color=0xFF0000)
                 embed.add_field(name="오류", value="이미 출석 체크를 하였습니다.")
                 await ctx.send(embed=embed)
+                economy_log(ctx, "출석체크", "0", 0)
 
 @bot.slash_command(name="송금", description="돈 송금")
 async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는사람"), money: int = commands.Param(name="금액")):
