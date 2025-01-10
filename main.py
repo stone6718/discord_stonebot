@@ -1567,7 +1567,9 @@ class EarnButton(disnake.ui.Button):
 
         # 버튼 비활성화
         self.disabled = True
-        await interaction.message.edit(view=self.view)
+        view = disnake.ui.View()
+        view.add_item(self)
+        await interaction.message.edit(view=view)
 
 @bot.slash_command(name="일하기", description="버튼을 눌러 30,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
