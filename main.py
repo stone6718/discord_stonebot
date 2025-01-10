@@ -1565,6 +1565,10 @@ class EarnButton(disnake.ui.Button):
         embed.add_field(name="돈 지급", value=f"{interaction.author.mention}, {random_add_money:,}원이 지급되었습니다.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+        # 버튼 비활성화
+        self.disabled = True
+        await interaction.message.edit(view=self.view)
+
 @bot.slash_command(name="일하기", description="버튼을 눌러 30,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
     if not await check_permissions(ctx):
@@ -1720,6 +1724,7 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
         result = "비겼습니다!"
         result_embed.add_field(name="결과", value=result, inline=False)
         result_embed.add_field(name="돈은 그대로 유지됩니다.", value=f"현재 금액: {current_money:,}원", inline=False)
+        await economy_log(ctx, "가위바위보", "0", 0)
     elif (user_choice == "가위" and bot_choice == "보") or \
          (user_choice == "바위" and bot_choice == "가위") or \
          (user_choice == "보" and bot_choice == "바위"):
@@ -1728,6 +1733,7 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
         await add_exp(user.id, round(bet_amount / 600))
         result_embed.add_field(name="결과", value=result, inline=False)
         result_embed.add_field(name="보상", value=f"{bet_amount * 2:,}원을 얻었습니다.", inline=False)
+        await economy_log(ctx, "가위바위보", "+", bet_amount * 2)
     else:
         result = "당신이 졌습니다!"
         await removemoney(user.id, bet_amount)  # 돈을 제거
@@ -1735,6 +1741,7 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
         await add_exp(user.id, round(bet_amount / 1200))
         result_embed.add_field(name="결과", value=result, inline=False)
         result_embed.add_field(name="패배", value=f"{bet_amount:,}원을 잃었습니다.", inline=False)
+        await economy_log(ctx, "가위바위보", "-", bet_amount)
 
     # 결과 메시지 전송
     await ctx.send(embed=result_embed)
@@ -1924,6 +1931,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
         await addmoney(user.id, win_money - money)
         await add_exp(user.id, round(win_money / 600))
         embed.add_field(name="성공", value=f"{win_money:,}원을 얻었습니다.", inline=False)
+        await economy_log(ctx, "도박_바카라", "+", win_money)
     else:  # lose
         if winner == "무승부":
             embed.add_field(name="무승부", value="배팅 금액이 유지됩니다.", inline=False)
@@ -1932,6 +1940,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
             await add_lose_money(user.id, money)
             await add_exp(user.id, round(money / 1200))
             embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.", inline=False)
+            await economy_log(ctx, "도박_바카라", "-", money)
 
     # 카드 결과 출력
     embed.add_field(name="결과", value=f"배팅 : {method}\n배팅금액 : {money:,}원\n승리 : {winner}!", inline=False)
