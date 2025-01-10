@@ -1554,8 +1554,6 @@ class EarnButton(disnake.ui.Button):
         super().__init__(label="돈 받기", style=ButtonStyle.primary)
 
     async def callback(self, interaction: disnake.MessageInteraction):
-        global random_add_money
-
         random_add_money = random.randrange(30000, 100001)
         random_add_money = int(round(random_add_money, -3))
 
@@ -1570,6 +1568,9 @@ class EarnButton(disnake.ui.Button):
         view = disnake.ui.View()
         view.add_item(self)
         await interaction.message.edit(view=view)
+
+        # 로그 기록
+        await economy_log(interaction, "일하기", "+", random_add_money)
 
 @bot.slash_command(name="일하기", description="버튼을 눌러 30,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
@@ -1589,7 +1590,7 @@ async def earn_money(ctx):
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="쿨타임", value=f"{ctx.author.mention}, {remaining_time}초 후에 다시 시도해주세요.")
         await ctx.send(embed=embed)
-        economy_log(ctx, "일하기", "0", 0)
+        await economy_log(ctx, "일하기", "0", 0)
     else:
         cooldowns[str(ctx.author.id)] = current_time
         save_cooldowns(cooldowns)
@@ -1600,7 +1601,6 @@ async def earn_money(ctx):
         view.add_item(button)
         embed = disnake.Embed(title="돈 받기!", description="아래 버튼을 눌러 돈을 받으세요.")
         await ctx.send(embed=embed, view=view)
-        economy_log(ctx, "일하기", "+", random_add_money)
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
