@@ -3867,7 +3867,7 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
     
     await ctx.send(embed=embed, ephemeral=True)
 
-@bot.slash_command(name="수동추첨", description="로또를 자동으로 추첨합니다. [개발자전용]")
+@bot.slash_command(name="수동추첨", description="로또를 수동으로 추첨합니다. [개발자전용]")
 async def manual_lottery_draw(ctx):
     # 개발자 ID 확인
     if ctx.author.id not in developer:
@@ -3947,7 +3947,7 @@ async def manual_lottery_draw(ctx):
     embed.add_field(name="당첨자 수", value=f"1등: {prize_counts['1등']}명\n2등: {prize_counts['2등']}명\n3등: {prize_counts['3등']}명\n4등: {prize_counts['4등']}명\n5등: {prize_counts['5등']}명", inline=False)
 
     # 특정 채널에 결과 전송
-    channel = bot.get_channel(sec.lotto_ch_id)
+    channel = bot.get_channel(int(sec.lotto_ch_id))
     if channel:
         await channel.send(embed=embed)
 
@@ -4510,7 +4510,7 @@ async def koreabots():
     }
     body = {
         "servers": len(bot.guilds),
-        "shards": 1,
+        "shards": 2,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -4575,11 +4575,13 @@ async def update_stock_prices():
 @tasks.loop()
 async def periodic_price_update():
     while True:
+        await asyncio.sleep(60)
         await update_stock_prices()
-        await update_coin_prices()
-        await asyncio.sleep(20)
         print("주가 변동")
         await send_webhook_message("주가 변동")
+        await update_coin_prices()
+        print("코인 변동")
+        await send_webhook_message("코인 변동")
 
 periodic_price_update.start()
 
@@ -4604,7 +4606,7 @@ db_path = os.path.join('system_database', 'lotto.db')
 @tasks.loop(seconds=1)  # 매 1초마다 체크
 async def lottery_draw():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 KST 시간 가져오기
-    if now.weekday() == 5 and now.hour == 20 and now.minute == 45 and now.second == 0:  # 매주 토요일 21시 0분 0초
+    if now.weekday() == 6 and now.hour == 11 and now.minute == 55 and now.second == 0:  # 매주 토요일 21시 0분 0초
         await draw_lottery()
 
 lottery_draw.start()
@@ -4663,7 +4665,6 @@ async def draw_lottery():
 
                 if prize_amount > 0:
                     await addmoney(user_id, prize_amount)
-                    embed.add_field(name=f"{user_id}님", value=f"{prize_amount:,}원이 지급되었습니다.", inline=False)
 
                     # 당첨자에게 DM 전송
                     try:
@@ -4677,13 +4678,11 @@ async def draw_lottery():
 
             # 등수별 당첨자 수 추가
             embed.add_field(name="당첨자 수", value=f"1등: {prize_counts['1등']}명\n2등: {prize_counts['2등']}명\n3등: {prize_counts['3등']}명\n4등: {prize_counts['4등']}명\n5등: {prize_counts['5등']}명", inline=False)
-            print(embed.to_dict())
         else:
             embed.add_field(name="결과", value="당첨자 없음.", inline=False)
-            print(embed.to_dict())
 
         # 특정 채널에 결과 전송
-        channel = bot.get_channel(sec.lotto_ch_id)
+        channel = bot.get_channel(int(sec.lotto_ch_id))
         if channel:
             await channel.send(embed=embed)
 
