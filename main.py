@@ -1,13 +1,13 @@
-import security as sec, coolsms_kakao
-from def_list import *
-import bs4, re, pytz, math, time, os, sqlite3
+import security as sec
+import yt_dlp as youtube_dl
+import bs4, re, pytz, math, time, os, sqlite3, coolsms_kakao
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
 import random, string, datetime, psutil, websocket, aiohttp, cpuinfo
 from gtts import gTTS
-import yt_dlp as youtube_dl
+from def_list import *
+import matplotlib.pyplot as plt
+from matplotlib import font_manager, rc
 from googletrans import Translator
-from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
-from disnake.ui import Button, View, Modal, TextInput
 from disnake.ext import commands, tasks
 from collections import defaultdict
 from importlib.metadata import version
@@ -15,8 +15,9 @@ from permissions import get_permissions
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
-import matplotlib.pyplot as plt
-from matplotlib import font_manager, rc
+from disnake.ui import Button, View, Modal, TextInput
+from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
+
 
 #intents = disnake.Intents.all()
 bot = commands.AutoShardedBot(command_prefix="/", shard_count=2) #intents=intents)
