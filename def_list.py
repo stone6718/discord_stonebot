@@ -829,6 +829,7 @@ async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multip
         await add_exp(user.id, round(earnings / 600))
         embed = disnake.Embed(color=embedsuccess)
         embed.add_field(name="성공", value=f"{earnings:,}원을 얻었습니다.")
+        await economy_log(ctx, "도박", "+", earnings)
     else:  # 실패
         loss = round(money * lose_multiplier)
         await removemoney(user.id, loss)
@@ -836,6 +837,7 @@ async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multip
         await add_exp(user.id, round(loss / lose_exp_divisor))
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="실패", value=f"{loss:,}원을 잃었습니다.")
+        await economy_log(ctx, "도박", "-", loss)
     
     await ctx.send(embed=embed)
 

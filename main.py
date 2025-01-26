@@ -1685,8 +1685,10 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
     send_user_money = await getmoney(send_user.id)
     if send_user_money < money:
         return await ctx.send(f"{send_user.mention}님의 잔액이 부족하여 송금할 수 없습니다.")
-    await removemoney(send_user.id, money)
+    await removemoney(send_user.id, money) 
+    await economy_log(send_user, "송금", "-", money)
     await addmoney(get_user.id, money)
+    await economy_log(get_user, "송금", "+", money)
     embed = disnake.Embed(title="송금 완료", color=embedsuccess)
     embed.add_field(name="송금인", value=f"{send_user.mention}")
     embed.add_field(name="받는사람", value=f"{get_user.mention}")
@@ -1812,6 +1814,7 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
             await add_exp(user.id, round((money * 2) / 600))
             embed = disnake.Embed(color=embedsuccess)
             money = money * 3
+            await economy_log(ctx, "숫자도박", "+", money)
             embed.add_field(name="성공", value=f"{money:,}원을 얻었습니다.")
             await ctx.send(embed=embed)
         else:
@@ -1820,6 +1823,7 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
             await add_exp(user.id, round((money * 2) / 1200))
             embed = disnake.Embed(color=embederrorcolor)
             money = round(money * 2)
+            await economy_log(ctx, "숫자도박", "-", money)
             embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.")
             await ctx.send(embed=embed)
 
@@ -2024,6 +2028,7 @@ async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str
 
     # 잔액 차감
     await removemoney(user_id, total_cost)
+    await economy_log(ctx, "로또", "-", total_cost)
 
     await ctx.response.defer()  # 응답을 미리 지연
 
