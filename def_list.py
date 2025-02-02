@@ -21,6 +21,18 @@ smtp_password = sec.smtp_password
 
 nice_api_key = sec.nice_api_key
 
+async def tos(ctx):
+    db_path = os.path.join('system_database', 'economy.db')
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.execute("SELECT tos FROM user WHERE id = ?", (ctx.author.id,)) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0] == 1:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="명령어 사용이 제한된 사용자입니다.")
+                await ctx.send(embed=embed, ephemeral=True)
+                return False
+            return True
+        
 async def send_webhook_message(content):
     embed = disnake.Embed(title="스톤봇 로그", description=content, color=embedcolor)
     async with aiohttp.ClientSession() as session:
@@ -173,7 +185,6 @@ async def get_calorie_info_async(school_name, edu_office_code, date):
     else:
         raise Exception(f"API request failed with status code {response.status_code}: {response.text}")
 
-
 # 원산지 정보를 얻는 비동기 함수
 async def get_origin_info_async(school_name, edu_office_code, date):
     school_code = find_school_code(school_name, edu_office_code)
@@ -213,7 +224,6 @@ async def get_nutrition_info_async(school_name, edu_office_code, date):
     school_code = find_school_code(school_name, edu_office_code)
     if not school_code:
         raise Exception("학교 코드를 찾을 수 없습니다.")
-
 
     # 캐시에서 영양 정보를 확인하고, 없으면 API 요청을 보냄
     if (school_name, edu_office_code, date) in nutrition_cache:

@@ -18,9 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 from disnake.ui import Button, View, Modal, TextInput
 from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
 
-
 #intents = disnake.Intents.all()
-bot = commands.AutoShardedBot(command_prefix="/", shard_count=2) #intents=intents)
+bot = commands.AutoShardedBot(command_prefix="/") #intents=intents)
+shard_count = min(2, max(1, len(bot.guilds) // 1000))
 token = sec.token
 developer = [int(dev_id) for dev_id in sec.developer_id]
 
@@ -103,7 +103,7 @@ async def meal(ctx,
     지역=commands.Param(description="학교가 위치한 지역을 골라주세요.", choices=list(region_codes.keys())),
     학교명: str=commands.Param(description="학교명을 ~~학교 까지 입력해주세요."), 
     날짜:str=commands.Param(description="YYYYMMDD  8자를 입력해주세요.", default=None)):
-    
+    await tos(ctx)
     try:
         if 학교명.endswith('초') or 학교명.endswith('고'):
             학교명 += '등학교'
@@ -306,11 +306,11 @@ async def meal(ctx,
         await ctx.response.defer(ephemeral=False)
         await ctx.send(f"Error: {str(e)}")
 
-
 @bot.slash_command(name="날씨", description="날씨를 볼 수 있습니다.")
 async def weather(ctx, region: str = commands.Param(name="지역", description="지역을 입력하세요.")):
     if ctx.guild is None or not await check_permissions(ctx):
         return
+    await tos(ctx)
     await command_use_log(ctx, "날씨", f"{region}")
     await ctx.response.defer(ephemeral=False)
     try:
@@ -385,6 +385,7 @@ async def weather(ctx, region: str = commands.Param(name="지역", description="
 async def ai_ask(ctx,
                   choice: str = commands.Param(name="모델", choices=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini", "DALL·E"]), 
                   ask: str = commands.Param(name="질문")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
 
@@ -446,6 +447,7 @@ async def ai_ask(ctx,
 
 @bot.slash_command(name="ai대화", description="스톤 AI와 대화합니다.")
 async def ai_chat(ctx, ask: str = commands.Param(name="내용")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
 
@@ -594,6 +596,7 @@ LANGUAGE_CHOICES = list(LANGUAGES.keys())
 
 @bot.slash_command(name="번역", description="텍스트를 선택한 언어로 번역합니다.")
 async def translation(ctx, languages: str = commands.Param(name="언어"), text: str = commands.Param(name="내용")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "번역", f"{languages}, {text}")
@@ -652,7 +655,6 @@ class LanguageView(disnake.ui.View):
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
         return embed
 
-
 class PreviousButton(disnake.ui.Button):
     def __init__(self):
         super().__init__(label="이전", style=disnake.ButtonStyle.primary)
@@ -662,7 +664,6 @@ class PreviousButton(disnake.ui.Button):
         if view.current_page > 0:
             view.current_page -= 1
             await view.update_message(ctx)
-
 
 class NextButton(disnake.ui.Button):
     def __init__(self):
@@ -676,11 +677,13 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="언어목록", description="지원하는 언어 목록을 확인합니다.")
 async def language_list(ctx: disnake.CommandInteraction):
+    await tos(ctx)
     view = LanguageView(LANGUAGES)
     view.message = await ctx.send(embed=await view.create_embed(), view=view)
 
 @bot.slash_command(name="tts", description="입력한 텍스트를 음성으로 변환하여 재생합니다.")
 async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="텍스트")):
+    await tos(ctx)
     await ctx.response.defer()  # 응답 지연
 
     # 음성 채널에 연결
@@ -834,7 +837,9 @@ voice_clients = {}
 
 @bot.slash_command(name='재생', description='유튜브 링크 또는 제목으로 음악을 재생합니다.')
 async def play(ctx, url_or_name: str):
-    await ctx.response.defer()
+    await tos(ctx)
+    if not ctx.response.is_done():  # 이미 응답이 되었는지 확인
+        await ctx.response.defer()
     if not await check_permissions(ctx):
         return
 
@@ -866,7 +871,7 @@ async def play_song(ctx, channel_id, url_or_name):
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
         if not player:
             raise Exception("음악을 찾을 수 없습니다.")
-        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)))
+        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if not e else print(f"Error: {e}"))
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=f'재생 중: {player.title}\n[링크]({player.url})')
         await send_control_buttons(ctx, embed)
         await send_webhook_message(f"음악 재생 중: {player.title}\n[링크]({player.url})")
@@ -875,7 +880,7 @@ async def play_song(ctx, channel_id, url_or_name):
         await send_webhook_message(f"음악 재생 중 오류 발생: {str(e)}")
 
 async def connect_voice_client(ctx, channel_id):
-    if channel_id not in voice_clients or not voice_clients[channel_id].is_connected():
+    if channel_id not in voice_clients or not voice_clients[channel_id].is_connected() or voice_clients[channel_id].is_closed():
         voice_client = await ctx.author.voice.channel.connect()
         voice_clients[channel_id] = voice_client
 
@@ -978,6 +983,7 @@ async def change_song_callback(ctx):
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "입장", None)
@@ -998,6 +1004,7 @@ async def join(ctx):
 
 @bot.slash_command(name='볼륨', description="플레이어의 볼륨을 변경합니다.")
 async def volume(ctx, volume: int):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "볼륨", f"{volume}")
@@ -1013,6 +1020,7 @@ async def volume(ctx, volume: int):
 
 @bot.slash_command(name='정지', description="음악을 중지하고 음성 채널에서 나갑니다.")
 async def stop(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "정지", None)
@@ -1029,6 +1037,7 @@ async def stop(ctx):
 
 @bot.slash_command(name='일시정지', description="음악을 일시정지합니다.")
 async def pause(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "일시정지", None)
@@ -1044,6 +1053,7 @@ async def pause(ctx):
 
 @bot.slash_command(name='다시재생', description="일시중지된 음악을 다시 재생합니다.")
 async def resume(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "다시재생", None)
@@ -1075,6 +1085,7 @@ MAX_PLAYLISTS = {
 
 @bot.slash_command(name='플레이리스트', description='플레이리스트를 확인합니다.')
 async def view_playlist(ctx, playlist_name: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "플레이리스트", f"{playlist_name}")
@@ -1096,6 +1107,7 @@ async def view_playlist(ctx, playlist_name: str):
 
 @bot.slash_command(name='플레이리스트_추가', description='플레이리스트에 음악을 추가합니다.')
 async def add_to_playlist(ctx, playlist_name: str, song: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "플레이리스트_추가", f"{playlist_name}")
@@ -1154,6 +1166,7 @@ async def add_to_playlist(ctx, playlist_name: str, song: str):
 
 @bot.slash_command(name='플레이리스트_삭제', description='플레이리스트에서 음악을 삭제합니다.')
 async def remove_from_playlist(ctx, playlist_name: str, song: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "플레이리스트_삭제", f"{playlist_name}, {song}")
@@ -1206,6 +1219,7 @@ class verify_Modal_Captcha(disnake.ui.Modal):
 
 @bot.slash_command(name="인증", description="번호를 눌러 인증합니다.")
 async def calculate_verify(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "인증", None)
@@ -1318,10 +1332,10 @@ class verify_Modal_SMS(disnake.ui.Modal):
             embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="인증번호가 일치하지 않습니다.")
             await ctx.send(embed=embed, ephemeral=True)
-                    
 
 @bot.slash_command(name='인증_문자', description='문자를 이용해서 인증을 합니다.')
 async def sms_verify(ctx, phone_number: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "인증_문자", f"{phone_number}")
@@ -1427,6 +1441,7 @@ class verify_Modal_EMAIL(disnake.ui.Modal):
 
 @bot.slash_command(name='인증_이메일', description='이메일을 이용해서 인증을 합니다.')
 async def email_verify(ctx, email: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "인증_이메일", f"{email}")
@@ -1494,10 +1509,9 @@ async def wallet(ctx, member_id: str = None):
 
     if not await member_status(ctx):
         return
-        
+
     await command_use_log(ctx, "지갑", f"{member_id}")
     
-
     user = ctx.author if member_id is None else await bot.fetch_user(member_id)
     if user is None:
         await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
@@ -1514,8 +1528,8 @@ async def wallet(ctx, member_id: str = None):
     if tos is None:
         await ctx.followup.send(f"{user.mention}, TOS 정보가 없습니다.", ephemeral=True)
         return
-    if tos == 1:
-        await ctx.followup.send(f"{user.mention}, 이용제한된 유저입니다.", ephemeral=True)
+    elif tos == 1:
+        await ctx.followup.send(f"{user.mention}, 이용이 제한된 유저 입니다.", ephemeral=True)
         return
 
     money, level, exp, lose_money = user_data[1], user_data[3], user_data[4], user_data[5]
@@ -1531,6 +1545,7 @@ async def wallet(ctx, member_id: str = None):
 
 @bot.slash_command(name="돈순위", description="가장 돈이 많은 유저의 리스트를 보여줍니다.")
 async def money_ranking(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     
@@ -1575,6 +1590,7 @@ class EarnButton(disnake.ui.Button):
 
 @bot.slash_command(name="일하기", description="버튼을 눌러 30,000 ~ 100,000원을 얻습니다.")
 async def earn_money(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "일하기", None)
@@ -1605,6 +1621,7 @@ async def earn_money(ctx):
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "출석체크", None)
@@ -1649,6 +1666,7 @@ async def check_in(ctx):
 
 @bot.slash_command(name="송금", description="돈 송금")
 async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는사람"), money: int = commands.Param(name="금액")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "송금", f"{get_user}, {money}")
@@ -1697,6 +1715,7 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
 
 @bot.slash_command(name="가위바위보", description="봇과 가위바위보 도박을 합니다. (확률 33.3%, 2배, 실패시 -1배)")
 async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(name="선택", choices=["가위", "바위", "보"]), bet_amount: int = commands.Param(name="금액")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가위바위보", f"{user_choice}, {bet_amount}")
@@ -1754,6 +1773,7 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
 betting_method_choices = ["도박 (확률 30%, 2배, 실패시 -1배)", "도박2 (확률 50%, 1.5배, 실패시 -0.75배)"]
 @bot.slash_command(name="도박", description="보유금액으로 도박을 합니다.")
 async def betting(ctx, money: int = commands.Param(name="금액"), betting_method: str = commands.Param(name="배팅종류", choices=betting_method_choices)):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "도박", f"{money}, {betting_method}")
@@ -1781,6 +1801,7 @@ async def betting(ctx, money: int = commands.Param(name="금액"), betting_metho
 
 @bot.slash_command(name="숫자도박", description="보유금액으로 도박을 합니다. (숫자맞추기 1~4, 확률 25%, 최대 3배, 실패시 -2배)")
 async def betting_number(ctx, number: int = commands.Param(name="숫자"), money: int = commands.Param(name="금액")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "숫자도박", f"{number}, {money}")
@@ -1848,6 +1869,7 @@ def get_card_value(card):
 
 @bot.slash_command(name="도박_바카라", description="보유금액으로 도박을 합니다.")
 async def betting_card(ctx, money: int = commands.Param(name="금액"), method: str = commands.Param(name="배팅", choices=["플레이어", "무승부", "뱅커"])):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     
@@ -1960,6 +1982,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
 
 @bot.slash_command(name="바카라_분석", description="분석 데이터를 그래프로 보여줍니다.")
 async def baccarat(ctx):
+    await tos(ctx)
     db_path = os.path.join('system_database', 'log.db')
 
     conn = sqlite3.connect(db_path)
@@ -2006,6 +2029,7 @@ async def baccarat(ctx):
 
 @bot.slash_command(name="로또구매", description="로또을 구매합니다.")
 async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str = None):
+    await tos(ctx)
     user_id = ctx.author.id
 
     # 최대 구매 개수 제한
@@ -2078,6 +2102,7 @@ async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str
 
 @bot.slash_command(name="코드추가", description="멤버쉽 코드를 추가하고 기간을 설정합니다.[개발자전용]")
 async def license_code_add(ctx, code: str = commands.Param(name="코드", choices=["gift", "reward", "general"]), date: int = commands.Param(name="기간")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코드추가", f"{code}, {date}")
@@ -2117,6 +2142,7 @@ async def license_code_add(ctx, code: str = commands.Param(name="코드", choice
 
 @bot.slash_command(name="코드삭제", description="멤버쉽 코드를 삭제합니다.")
 async def license_code_remove(ctx, code: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코드삭제", f"{code}")
@@ -2153,11 +2179,12 @@ async def license_code_remove(ctx, code: str):
 
 @bot.slash_command(name="멤버쉽등록", description="멤버쉽 회원으로 등록하거나 기간을 연장합니다.")
 async def license_code_use(ctx, code: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "멤버쉽등록", f"{code}")
     db_path = os.path.join('system_database', 'membership.db')
-    economy_aiodb = await aiosqlite.connect(db_path)
+    economy_aiodb = await pool.acquire()
 
     # license 테이블에서 code 확인
     aiocursor = await economy_aiodb.execute("SELECT use, day FROM license WHERE code=?", (code,))
@@ -2228,6 +2255,7 @@ async def license_code_use(ctx, code: str):
 
 @bot.slash_command(name="멤버쉽", description="현재 멤버쉽 상태를 확인합니다.")
 async def check_membership_status(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "멤버쉽", None)
@@ -2269,6 +2297,7 @@ async def check_membership_status(ctx):
 
 @bot.slash_command(name="가입", description="경제기능을 가입합니다.")
 async def economy_join(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가입", None)
@@ -2298,6 +2327,7 @@ async def economy_join(ctx):
 
 @bot.slash_command(name="탈퇴", description="경제기능을 탈퇴합니다.")
 async def economy_secession(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "탈퇴", None)
@@ -2350,6 +2380,7 @@ class AuthButton(disnake.ui.View):
 
 @bot.slash_command(name="몬스터타입설정", description="채널의 몬스터 타입을 설정합니다. [관리자전용]")
 async def set_monster_type_command(ctx, monster_type: str = commands.Param(name="타입", choices=["초원", "고수의땅", "지옥의땅"])):
+    await tos(ctx)
     # 서버의 관리자인지 확인
     if not ctx.author.guild_permissions.manage_channels:
         embed = disnake.Embed(color=0xff0000)
@@ -2404,6 +2435,7 @@ hell_restricted_swords = ["나무검", "돌검", "철검", "단단한검", "만�
 
 @bot.slash_command(name="몬스터사냥", description="랜덤 몬스터를 잡습니다.")
 async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", choices=sword)):
+    await tos(ctx)
     await ctx.response.defer()  # 응답 지연
 
     user_id = ctx.author.id  # 사용자 ID 가져오기
@@ -2462,6 +2494,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 
     # 메시지 전송
     message = await ctx.send(embed=embed, view=view)
+    message_id = message.id
 
     async def attack_callback(interaction):
         await interaction.response.defer()  # 응답 지연
@@ -2470,7 +2503,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         # 몬스터 도망 확률 체크
         if random.random() < 0.05:  # 5% 확률로 도망
             embed = disnake.Embed(color=0xff0000)
-            embed.add_field(name="🏃 사냥실패", value=f"{monster_name}이(가) 도망쳤습니다!")
+            await interaction.followup.edit_message(message_id=message_id, embed=embed, view=None)  # 버튼 제거
             await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
             return
 
@@ -2482,13 +2515,13 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
             if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(color=0x00ff00)
-                embed.add_field(name="✅ 방어 성공", value=f"{sword_name}이(가) 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
+                await interaction.followup.edit_message(message_id=message_id, embed=embed, view=view)
                 await interaction.followup.edit_message(embed=embed, view=view)
                 return
             else:
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
                 embed = disnake.Embed(color=0xff0000)
-                embed.add_field(name="❌ 실패", value=f"{sword_name}이(가) 파괴되었습니다.")
+                await interaction.followup.edit_message(message_id=message_id, embed=embed, view=None)
                 await interaction.followup.edit_message(embed=embed, view=None)
                 return
 
@@ -2518,6 +2551,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 
 @bot.slash_command(name="아이템사용", description="경험치 병을 사용하여 경험치를 증가시킵니다.")
 async def use_experience_potion(ctx, count: int = commands.Param(name="개수")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
 
@@ -2632,6 +2666,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="아이템목록", description="아이템 목록을 확인합니다.")
 async def item_list(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "아이템목록", None)
@@ -2668,6 +2703,7 @@ upgrade_chances = {
 
 @bot.slash_command(name="강화", description="아이템을 강화합니다.")
 async def upgrade_item(ctx, item_name: str):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     
@@ -2792,6 +2828,7 @@ async def send_error_message(interaction, message):
 
 @bot.slash_command(name="아이템거래", description="아이템을 구매 또는 판매할 수 있습니다.")
 async def item_trading(ctx, item_name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), count: int = commands.Param(name="개수", default=1)):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "아이템거래", f"{item_name}, {choice}, {count}")
@@ -2891,6 +2928,7 @@ class ItemView2(disnake.ui.View):
 
 @bot.slash_command(name="인벤토리", description="보유 중인 아이템을 확인합니다.")
 async def inventory(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "인벤토리", None)
@@ -2992,7 +3030,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="코인목록", description="상장된 가상화폐를 확인합니다.")
 async def coin_list(ctx):
-    await ctx.response.defer()
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "코인목록", None)
@@ -3077,6 +3115,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="코인지갑", description="보유중인 가상화폐를 확인합니다.")
 async def coin_wallet(ctx):
+    await tos(ctx)
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
@@ -3102,6 +3141,7 @@ async def coin_wallet(ctx):
 
 @bot.slash_command(name="코인거래", description="가상화폐를 구매 또는 판매할 수 있습니다.")
 async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), _count: int = commands.Param(name="개수")):
+    await tos(ctx)
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
@@ -3200,6 +3240,7 @@ class NextButton(disnake.ui.Button):
 
 @bot.slash_command(name="주식목록", description="상장된 주식을 확인합니다.")
 async def stock_list(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "주식목록", None)
@@ -3290,6 +3331,7 @@ async def getuser_stock(user_id):
 
 @bot.slash_command(name="주식통장", description="보유중인 주식을 확인합니다.")
 async def stock_wallet(ctx):
+    await tos(ctx)
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
@@ -3312,6 +3354,7 @@ async def stock_wallet(ctx):
 
 @bot.slash_command(name="주식거래", description="주식을 구매 또는 판매할 수 있습니다.")
 async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), _count: int = commands.Param(name="개수")):
+    await tos(ctx)
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
@@ -3360,6 +3403,7 @@ async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice:
 
 @bot.slash_command(name="서버설정_채널", description="채널설정(로그채널 및 기타채널을 설정합니다) [관리자전용]")
 async def server_set(ctx, kind: str = commands.Param(name="종류", choices=["공지채널", "처벌로그", "입장로그", "퇴장로그", "인증채널"]), channel: disnake.TextChannel = commands.Param(name="채널")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "서버설정_채널", f"{kind}, {channel}")
@@ -3379,6 +3423,7 @@ async def server_set(ctx, kind: str = commands.Param(name="종류", choices=["�
 
 @bot.slash_command(name="서버설정_역할", description="역할설정(인증역할 및 기타역할을 설정합니다) [관리자전용]")
 async def server_set_role(ctx, kind: str = commands.Param(name="종류", choices=["인증역할"]), role: disnake.Role = commands.Param(name="역할")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "서버설정_역할", f"{kind}, {role}")
@@ -3398,6 +3443,7 @@ async def server_set_role(ctx, kind: str = commands.Param(name="종류", choices
 
 @bot.slash_command(name="서버정보", description="설정되있는 로그채널을 확인할수있습니다. [관리자전용]")
 async def server_info(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "서버정보", None)
@@ -3480,6 +3526,7 @@ async def server_info(ctx):
 
 @bot.slash_command(name="정보", description="봇의 실시간 상태와 정보를 알 수 있습니다.")
 async def bot_info(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "정보", None)
@@ -3564,6 +3611,7 @@ async def bot_info(ctx):
 
 @bot.slash_command(name="슬로우모드", description="채팅방에 슬로우모드를 적용합니다. [관리자전용]")
 async def slowmode(ctx, time: int = commands.Param(name="시간", description="시간(초)")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "슬로우모드", f"{time}")
@@ -3588,6 +3636,7 @@ async def slowmode(ctx, time: int = commands.Param(name="시간", description="�
 
 @bot.slash_command(name="청소", description="메시지를 삭제합니다. [관리자전용]")
 async def clear(ctx, num: int = commands.Param(name="개수")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
 
@@ -3624,6 +3673,7 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
 
 @bot.slash_command(name="공지", description="서버에 공지를 전송합니다. [관리자전용]")
 async def notification(ctx, content: str = commands.Param(name="내용")):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "공지", f"{content}")
@@ -3665,6 +3715,7 @@ async def notification(ctx, content: str = commands.Param(name="내용")):
 
 @bot.slash_command(name="추방", description="유저를 추방합니다. [관리자전용]")
 async def kick(ctx, user: disnake.Member = commands.Param(name="유저"), reason: str = commands.Param(name="사유", default=None)):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "추방", f"{user}, {reason}")
@@ -3710,6 +3761,7 @@ async def kick(ctx, user: disnake.Member = commands.Param(name="유저"), reason
 
 @bot.slash_command(name="차단", description="유저를 차단합니다. [관리자전용]")
 async def ban(ctx, user: disnake.Member = commands.Param(description="유저"), reason: str = commands.Param(name="사유", default=None)):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "차단", f"{user}, {reason}")
@@ -3732,6 +3784,7 @@ async def ban(ctx, user: disnake.Member = commands.Param(description="유저"), 
 
 @bot.slash_command(name="경고확인", description="보유중인 경고를 확인합니다.")
 async def warning_check(ctx, user: disnake.Member = commands.Param(name="유저", default=None)):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "경고확인", f"{user}")
@@ -3754,6 +3807,7 @@ async def warning_check(ctx, user: disnake.Member = commands.Param(name="유저"
 
 @bot.slash_command(name="경고", description="유저에게 경고를 지급합니다. [관리자전용]")
 async def warning(ctx, user: disnake.Member, warn_num: int = None, reason: str = None):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "경고", f"{user}, {warn_num}, {reason}")
@@ -3785,6 +3839,7 @@ async def warning(ctx, user: disnake.Member, warn_num: int = None, reason: str =
 
 @bot.slash_command(name="경고취소", description="지급한 경고를 취소합니다. [관리자전용]")
 async def warning_cancel(ctx, warn_id: int, reason: str = None):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "경고취소", f"{warn_id}, {reason}")
@@ -3826,6 +3881,7 @@ async def warning_cancel(ctx, warn_id: int, reason: str = None):
 
 @bot.slash_command(name="문의", description="개발자에게 문의를 보냅니다.")
 async def inquire(ctx):
+    await tos(ctx)
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "문의", None)
@@ -3846,31 +3902,31 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     async with economy_aiodb.cursor() as aiocursor:
-        await aiocursor.execute("SELECT dm_on_off FROM user WHERE id=?", (ctx.author.id,))
+        user_id = int(ctx.author.id)  # Ensure the user ID is an integer
+        await aiocursor.execute("SELECT dm_on_off FROM user WHERE id=?", (user_id,))
         dbdata = await aiocursor.fetchone()
 
         if dbdata is not None:
             current_state = int(dbdata[0])
-            if state == "on" and current_state == 1:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="이미 DM 수신이 활성화되어 있습니다.")
-            elif state == "on" and current_state == 0:
-                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (0, ctx.author.id))
-                await economy_aiodb.commit()
-                embed = disnake.Embed(color=embedsuccess)
-                embed.add_field(name="✅ DM 수신 활성화", value="이제 DM을 수신합니다.")
-            elif state == "off" and current_state == 0:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="이미 DM 수신이 비활성화되어 있습니다.")
-            elif state == "off" and current_state == 1:
-                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (1, ctx.author.id))
-                await economy_aiodb.commit()
-                embed = disnake.Embed(color=embedsuccess)
-                embed.add_field(name="✅ DM 수신 비활성화", value="이제 DM을 수신하지 않습니다.")
+            actions = {
+                ("on", 1): ("❌ 오류", "이미 DM 수신이 활성화되어 있습니다.", embederrorcolor),
+                ("on", 0): ("✅ DM 수신 활성화", "이제 DM을 수신합니다.", embedsuccess, 1),
+                ("off", 0): ("❌ 오류", "이미 DM 수신이 비활성화되어 있습니다.", embederrorcolor),
+                ("off", 1): ("✅ DM 수신 비활성화", "이제 DM을 수신하지 않습니다.", embedsuccess, 0)
+            }
+
+            action = actions.get((state, current_state))
+            if action:
+                title, message, color, *update_value = action
+                embed = disnake.Embed(color=color)
+                embed.add_field(name=title, value=message)
+                if update_value:
+                    await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (update_value[0], ctx.author.id))
+                    await economy_aiodb.commit()
         else:
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="가입이 되어있지 않습니다.")
-    
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value=f"{ctx.author.mention}\n가입이 되어있지 않습니다.")
     await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="수동추첨", description="로또를 수동으로 추첨합니다. [개발자전용]")
@@ -4016,67 +4072,87 @@ async def money_edit(ctx, member_id: str = commands.Param(name="유저"), choice
         await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="이용제한", description="봇 이용을 제한합니다. [개발자전용]")
-async def use_limit(ctx, user: disnake.Member = commands.Param(name="유저"), reason: str = commands.Param(name="사유", default=None)):
+async def use_limit(ctx, user_id: str = commands.Param(name="아이디"), reason: str = commands.Param(name="사유", default=None)):
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "이용제한", f"{user}, {reason}")
+    await command_use_log(ctx, "이용제한", f"{user_id}, {reason}")
     if ctx.author.id in developer:
         if reason is None:
             reason = "없음"
         db_path = os.path.join('system_database', 'economy.db')
         economy_aiodb = await aiosqlite.connect(db_path)
-        aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (user.id,))
+        aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (user_id,))
         dbdata = await aiocursor.fetchone()
         await aiocursor.close()
         if dbdata is not None:
             if int(dbdata[0]) == 1:
                 embed=disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value=f"{user.mention}는 이미 제한된 유저입니다.")
+                embed.add_field(name="❌ 오류", value=f"{user_id}는 이미 제한된 유저입니다.")
                 await ctx.send(embed=embed)
             else:
                 embed=disnake.Embed(title="✅ 이용제한", color=embederrorcolor)
-                embed.add_field(name="대상", value=f"{user.mention}")
+                embed.add_field(name="대상", value=f"{user_id}")
                 embed.add_field(name="사유", value=f"{reason}")
                 await ctx.send(embed=embed)
-                aiocursor = await economy_aiodb.execute("UPDATE user SET tos=? WHERE id=?", (1, user.id))
+                aiocursor = await economy_aiodb.execute("UPDATE user SET tos=? WHERE id=?", (1, user_id))
                 await economy_aiodb.commit()
                 await aiocursor.close()
+                try:
+                    user = await bot.fetch_user(user_id)
+                    embed=disnake.Embed(title="이용제한", description="봇 사용이 제한되었습니다.", color=embederrorcolor)
+                    embed.add_field(name="대상", value=f"{user_id}", inline=False)
+                    embed.add_field(name="사유", value=f"{reason}")
+                    await user.send(embed=embed)
+                except disnake.Forbidden:
+                    print(f"사용자 {user_id}에게 DM을 보낼 수 없습니다.")
         else:
             # user 테이블에 새로운 유저 추가
-            aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user.id, 0, 1, 0, 0, 0, 0, 0))
+            aiocursor = await economy_aiodb.execute("INSERT INTO user (id, money, tos, level, exp, lose_money, dm_on_off, checkin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user_id, 0, 1, 0, 0, 0, 0, 0))
             await economy_aiodb.commit()
             await aiocursor.close()
 
             embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="✅ 이용제한", value=f"{user.mention}\n가입되지 않은 유저였으므로 새로 추가되었습니다.")
+            embed.add_field(name="✅ 이용제한", value=f"{user_id}\n가입되지 않은 유저였으므로 새로 추가되었습니다.")
             await ctx.send(embed=embed)
+            try:
+                user = await bot.fetch_user(user_id)
+                await user.send(f"이용제한: {reason}")
+            except disnake.Forbidden:
+                print(f"사용자 {user_id}에게 DM을 보낼 수 없습니다.")
     else:
         embed=disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="개발자만 실행가능한 명령어입니다.")
         await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="제한해제", description="봇 이용제한을 해제합니다. [개발자전용]")
-async def use_limit_release(ctx, user: disnake.Member = commands.Param(name="유저")):
+async def use_limit_release(ctx, user_id: str = commands.Param(name="아이디")):
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "제한해제", f"{user}")
+    await command_use_log(ctx, "제한해제", f"{user_id}")
     if ctx.author.id in developer:
         db_path = os.path.join('system_database', 'economy.db')
         economy_aiodb = await aiosqlite.connect(db_path)
-        aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (user.id,))
+        aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (user_id,))
         dbdata = await aiocursor.fetchone()
         await aiocursor.close()
         if dbdata is not None:
             if int(dbdata[0]) == 1:
                 embed=disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="제한해제", value=f"{user.mention} 차단이 해제되었습니다.")
+                embed.add_field(name="제한해제", value=f"{user_id} 차단이 해제되었습니다.")
                 await ctx.send(embed=embed)
-                aiocursor = await economy_aiodb.execute("UPDATE user SET tos=? WHERE id=?", (0, user.id))
+                aiocursor = await economy_aiodb.execute("UPDATE user SET tos=? WHERE id=?", (0, user_id))
                 await economy_aiodb.commit()
                 await aiocursor.close()
+                try:
+                    user = await bot.fetch_user(user_id)
+                    embed=disnake.Embed(title="이용제한 해제", description="봇 사용 제한이 해제되었습니다.", color=embedsuccess)
+                    embed.add_field(name="대상", value=f"{user_id}")
+                    await user.send(embed=embed)
+                except disnake.Forbidden:
+                    print(f"사용자 {user_id}에게 DM을 보낼 수 없습니다.")
             else:
                 embed=disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value=f"{user.mention} 제한되지 않은 유저입니다.")
+                embed.add_field(name="❌ 오류", value=f"{user_id} 제한되지 않은 유저입니다.")
                 await ctx.send(embed=embed)
         else:
             embed=disnake.Embed(color=embederrorcolor)
@@ -4425,7 +4501,7 @@ async def handle_dm_message(message):
     # 특정 채널로 전송
     await send_to_support_channel(dm_embed, view)
 
-async def send_to_support_channel(embed, view):
+async def send_to_support_channel(embed=None, view=None, file=None):
     channel_id = int(sec.support_ch_id)
     channel = bot.get_channel(channel_id)
 
@@ -4433,7 +4509,10 @@ async def send_to_support_channel(embed, view):
         print(f"채널 ID {channel_id}을(를) 찾을 수 없습니다.")
         return
     try:
-        await channel.send(embed=embed, view=view)
+        if file:
+            await channel.send(file=file)
+        else:
+            await channel.send(embed=embed, view=view)
         print(f"메시지가 채널 ID {channel_id}로 전송되었습니다.")
     except Exception as e:
         print(f"메시지를 채널로 전송하는 중 오류 발생: {e}")
@@ -4459,6 +4538,8 @@ def get_uptime():
 
 @bot.event
 async def on_ready():
+    global pool
+    pool = await aiosqlite.create_pool(db_path, minsize=1, maxsize=10)
     print("\n봇 온라인!")
     print(f'봇 : {bot.user.name}')
     print(f'샤드 : {bot.shard_count}')
@@ -4495,6 +4576,7 @@ async def on_guild_join(guild):
 
 @bot.event
 async def on_guild_remove(guild):
+    await pool.close()
     await delete_server_database(guild.id)
     print(f'서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})')
     await send_webhook_message(f"서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})")
@@ -4516,7 +4598,7 @@ async def koreabots():
     }
     body = {
         "servers": len(bot.guilds),
-        "shards": 2,
+        "shards": len(bot.shards),
     }
 
     async with aiohttp.ClientSession() as session:
