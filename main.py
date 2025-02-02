@@ -2184,7 +2184,7 @@ async def license_code_use(ctx, code: str):
         return
     await command_use_log(ctx, "멤버쉽등록", f"{code}")
     db_path = os.path.join('system_database', 'membership.db')
-    economy_aiodb = await pool.acquire()
+    economy_aiodb = await aiosqlite.connect(db_path)
 
     # license 테이블에서 code 확인
     aiocursor = await economy_aiodb.execute("SELECT use, day FROM license WHERE code=?", (code,))
@@ -2503,8 +2503,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         # 몬스터 도망 확률 체크
         if random.random() < 0.05:  # 5% 확률로 도망
             embed = disnake.Embed(color=0xff0000)
-            await interaction.followup.edit_message(message_id=message_id, embed=embed, view=None)  # 버튼 제거
-            await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
+            await interaction.edit_original_message(embed=embed, view=None)  # 버튼 제거
             return
 
         # 공격 시 칼의 파괴 확률
@@ -2516,15 +2515,13 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(color=0x00ff00)
                 await interaction.followup.edit_message(message_id=message_id, embed=embed, view=view)
-                await interaction.followup.edit_message(embed=embed, view=view)
-                return
+                await interaction.edit_original_message(embed=embed, view=view)
             else:
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
                 embed = disnake.Embed(color=0xff0000)
                 await interaction.followup.edit_message(message_id=message_id, embed=embed, view=None)
                 await interaction.followup.edit_message(embed=embed, view=None)
-                return
-
+                await interaction.edit_original_message(embed=embed, view=None)
         # 몬스터에게 데미지 입힘
         monster_hp -= total_damage
 
@@ -3902,31 +3899,31 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     async with economy_aiodb.cursor() as aiocursor:
-        user_id = int(ctx.author.id)  # Ensure the user ID is an integer
-        await aiocursor.execute("SELECT dm_on_off FROM user WHERE id=?", (user_id,))
+        await aiocursor.execute("SELECT dm_on_off FROM user WHERE id=?", (ctx.author.id,))
         dbdata = await aiocursor.fetchone()
 
         if dbdata is not None:
             current_state = int(dbdata[0])
-            actions = {
-                ("on", 1): ("❌ 오류", "이미 DM 수신이 활성화되어 있습니다.", embederrorcolor),
-                ("on", 0): ("✅ DM 수신 활성화", "이제 DM을 수신합니다.", embedsuccess, 1),
-                ("off", 0): ("❌ 오류", "이미 DM 수신이 비활성화되어 있습니다.", embederrorcolor),
-                ("off", 1): ("✅ DM 수신 비활성화", "이제 DM을 수신하지 않습니다.", embedsuccess, 0)
-            }
-
-            action = actions.get((state, current_state))
-            if action:
-                title, message, color, *update_value = action
-                embed = disnake.Embed(color=color)
-                embed.add_field(name=title, value=message)
-                if update_value:
-                    await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (update_value[0], ctx.author.id))
-                    await economy_aiodb.commit()
+            if state == "on" and current_state == 1:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="이미 DM 수신이 활성화되어 있습니다.")
+            elif state == "on" and current_state == 0:
+                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (1, ctx.author.id))
+                await economy_aiodb.commit()
+                embed = disnake.Embed(color=embedsuccess)
+                embed.add_field(name="✅ DM 수신 활성화", value="이제 DM을 수신합니다.")
+            elif state == "off" and current_state == 0:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="이미 DM 수신이 비활성화되어 있습니다.")
+            elif state == "off" and current_state == 1:
+                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (1, ctx.author.id))
+                await economy_aiodb.commit()
+                embed = disnake.Embed(color=embedsuccess)
+                embed.add_field(name="✅ DM 수신 비활성화", value="이제 DM을 수신하지 않습니다.")
         else:
             embed = disnake.Embed(color=embederrorcolor)
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value=f"{ctx.author.mention}\n가입이 되어있지 않습니다.")
+            embed.add_field(name="❌ 오류", value="가입이 되어있지 않습니다.")
+    
     await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="수동추첨", description="로또를 수동으로 추첨합니다. [개발자전용]")
@@ -4538,8 +4535,6 @@ def get_uptime():
 
 @bot.event
 async def on_ready():
-    global pool
-    pool = await aiosqlite.create_pool(db_path, minsize=1, maxsize=10)
     print("\n봇 온라인!")
     print(f'봇 : {bot.user.name}')
     print(f'샤드 : {bot.shard_count}')
@@ -4576,7 +4571,6 @@ async def on_guild_join(guild):
 
 @bot.event
 async def on_guild_remove(guild):
-    await pool.close()
     await delete_server_database(guild.id)
     print(f'서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})')
     await send_webhook_message(f"서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})")
