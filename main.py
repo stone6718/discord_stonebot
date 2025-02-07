@@ -16,7 +16,8 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from disnake.ui import Button, View, Modal, TextInput
-from disnake import FFmpegPCMAudio, TextInputStyle, ButtonStyle
+from disnake import TextInputStyle, ButtonStyle
+from disnake import FFmpegPCMAudio
 
 #intents = disnake.Intents.all()
 bot = commands.AutoShardedBot(command_prefix="/") #intents=intents)
@@ -832,80 +833,6 @@ def cleanup(self):
     if hasattr(self, 'original'):
         self.original.cleanup()
 
-waiting_songs = defaultdict(list)
-voice_clients = {}
-
-@bot.slash_command(name='재생', description='유튜브 링크 또는 제목으로 음악을 재생합니다.')
-async def play(ctx, url_or_name: str):
-    await tos(ctx)
-    if not ctx.response.is_done():  # 이미 응답이 되었는지 확인
-        await ctx.response.defer()
-    if not await check_permissions(ctx):
-        return
-
-    await command_use_log(ctx, "재생", f"{url_or_name}")
-
-    if ctx.author.voice is None:
-        return await ctx.send("음성 채널에 연결되어 있지 않습니다. 먼저 음성 채널에 들어가세요.")
-
-    channel_id = ctx.author.voice.channel.id
-    voice_client = await connect_voice_client(ctx, channel_id)
-
-    if voice_client.is_playing():
-        waiting_songs[channel_id].append(url_or_name)
-        await send_webhook_message(f"현재 음악이 재생 중입니다. '{url_or_name}'가 끝나면 재생됩니다.")
-        return await ctx.send(f"현재 음악이 재생 중입니다. '{url_or_name}'가 끝나면 재생됩니다.")
-
-    if await is_playlist(url_or_name):
-        await handle_playlist(ctx, url_or_name, channel_id)
-    else:
-        await play_song(ctx, channel_id, url_or_name)
-
-async def play_song(ctx, channel_id, url_or_name):
-    voice_client = voice_clients.get(channel_id)
-
-    if voice_client is None or not voice_client.is_connected():
-        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
-
-    try:
-        player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
-        if not player:
-            raise Exception("음악을 찾을 수 없습니다.")
-        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if not e else print(f"Error: {e}"))
-        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=f'재생 중: {player.title}\n[링크]({player.url})')
-        await send_control_buttons(ctx, embed)
-        await send_webhook_message(f"음악 재생 중: {player.title}\n[링크]({player.url})")
-    except Exception as e:
-        await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
-        await send_webhook_message(f"음악 재생 중 오류 발생: {str(e)}")
-
-async def connect_voice_client(ctx, channel_id):
-    if channel_id not in voice_clients or not voice_clients[channel_id].is_connected() or voice_clients[channel_id].is_closed():
-        voice_client = await ctx.author.voice.channel.connect()
-        voice_clients[channel_id] = voice_client
-
-        # 음성 수신을 비활성화
-        voice_client.recv = lambda: None
-    
-    return voice_clients[channel_id]
-
-async def handle_playlist(ctx, url_or_name, channel_id):
-    playlist_owner = await get_playlist_owner(url_or_name)
-    if playlist_owner != ctx.author.id:
-        return await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description="이 플레이리스트의 소유자가 아닙니다."))
-
-    songs = await get_songs_from_playlist(url_or_name)
-    waiting_songs[channel_id].extend(songs)
-    await play_next_song(ctx, channel_id)
-
-async def play_next_song(ctx, channel_id):
-    if not waiting_songs[channel_id]:
-        await send_webhook_message("대기열이 비어 있습니다.")
-        return await ctx.send("대기열이 비어 있습니다.")
-
-    next_song = waiting_songs[channel_id].pop(0)
-    await play_song(ctx, channel_id, next_song)
-
 @asynccontextmanager
 async def connect_db():
     db_path = os.path.join('system_database', 'music.db')
@@ -915,71 +842,44 @@ async def connect_db():
     finally:
         await conn.close()
 
-async def is_playlist(name):
-    async with connect_db() as conn:
-        cursor = await conn.execute("SELECT COUNT(DISTINCT playlist_name) FROM playlists WHERE playlist_name = ?", (name,))
-        result = await cursor.fetchone()
-        return result[0] > 0
+waiting_songs = defaultdict(list)
+voice_clients = {}
 
-async def get_playlist_owner(playlist_name):
-    async with connect_db() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT user_id FROM playlists WHERE playlist_name = ?", (playlist_name,))
-            owner = await cursor.fetchone()
-    return owner[0] if owner else None
+@bot.slash_command(name='재생', description="음악을 재생합니다.")
+async def play(ctx, search: str):
+    await tos(ctx)
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "재생", f"{search}")
+    if not await member_status(ctx):
+        return
 
-async def get_songs_from_playlist(playlist_name):
-    async with connect_db() as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT song FROM playlists WHERE playlist_name = ?", (playlist_name,))
-            return [row[0] for row in await cursor.fetchall()]
+    voice_channel = ctx.author.voice.channel if ctx.author.voice else None
+    if voice_channel is None:
+        return await ctx.send("음성 채널에 들어가야 합니다.", ephemeral=True)
 
-async def send_control_buttons(ctx, embed):
-    buttons = [
-        disnake.ui.Button(label="정지", style=disnake.ButtonStyle.red, custom_id="stop"),
-        disnake.ui.Button(label="일시 정지", style=disnake.ButtonStyle.red, custom_id="pause"),
-        disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
-        disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_up"),
-        disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
-    ]
-
-    button_row = disnake.ui.View(timeout=None)
-    for button in buttons:
-        button_row.add_item(button)
-
-    await ctx.send(embed=embed, view=button_row)
-
-    button_row.children[0].callback = stop_callback
-    button_row.children[1].callback = pause_callback
-    button_row.children[2].callback = resume_callback
-    button_row.children[3].callback = volume_change_callback
-    button_row.children[4].callback = change_song_callback
-
-async def pause_callback(ctx):
-    ctx.guild.voice_client.pause()
-    await ctx.send("음악이 일시정지되었습니다.", ephemeral=True)
-    await send_webhook_message("음악이 일시정지되었습니다.")
-
-async def stop_callback(ctx):
-    ctx.guild.voice_client.stop()
-    await ctx.send("음악이 정지되었습니다.", ephemeral=True)
-    await send_webhook_message("음악이 정지되었습니다.")
-
-async def resume_callback(ctx):
-    if ctx.guild.voice_client.is_paused():
-        ctx.guild.voice_client.resume()
-        await ctx.send("음악을 재개했습니다.", ephemeral=True)
-        await send_webhook_message("음악이 재개되었습니다.")
+    voice_client = disnake.utils.get(bot.voice_clients, guild=ctx.guild)
+    if voice_client is None:
+        voice_client = await voice_channel.connect()
     else:
-        await ctx.send("현재 재생 중인 음악이 없습니다.", ephemeral=True)
+        await voice_client.move_to(voice_channel)
 
-async def volume_change_callback(ctx):
-    modal = VolumeChangeModal()
-    await ctx.response.send_modal(modal)
+    try:
+        if not search.startswith("http"):
+            search = f"ytsearch:{search}"
+        player = await YTDLSource.from_url(search, loop=bot.loop, stream=True)
+        voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
+        embed = disnake.Embed(title="음악 재생", description=f"**{player.title}**을(를) 재생합니다.", color=0x00ff00)
+        embed.set_thumbnail(url=player.thumbnail)
+        await ctx.send(embed=embed)
+        while voice_client.is_playing():
+            await asyncio.sleep(1)
 
-async def change_song_callback(ctx):
-    modal = MusicChangeModal()
-    await ctx.response.send_modal(modal)
+        embed = disnake.Embed(title="음악 재생", description=f"**{player.title}**을(를) 재생합니다.", color=0x00ff00)
+        embed.set_thumbnail(url=player.thumbnail)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"음악을 재생하는 중 오류가 발생했습니다: {str(e)}")
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -2494,7 +2394,11 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 
     # 메시지 전송
     message = await ctx.send(embed=embed, view=view)
-    message_id = message.id
+    if message:
+        message_id = message.id
+    else:
+        await ctx.send("메시지를 전송하는 데 실패했습니다.")
+        return
 
     async def attack_callback(interaction):
         await interaction.response.defer()  # 응답 지연
