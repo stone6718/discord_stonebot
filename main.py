@@ -2756,8 +2756,6 @@ async def handle_upgrade_success(interaction, item_name, current_class, view):
     await update_item_class(interaction.author.id, item_name, new_class)
     embed = disnake.Embed(color=0x00ff00)
     embed.add_field(name="✅ 강화 성공", value=f"{item_name} 아이템이 {new_class}강으로 강화되었습니다.")
-    embed.add_field(name="현재 강화 등급", value=f"{new_class}강", inline=False)
-    embed.add_field(name="비용", value=f"{(new_class + 1) * 100 + 100} 캐시", inline=False)
     await interaction.response.edit_message(embed=embed, view=None)
 
 async def handle_upgrade_failure(interaction, item_name, current_class, view):
