@@ -721,7 +721,7 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
         voice_client.play(disnake.FFmpegPCMAudio(f"{tmp_file.name}.mp3"))
 
         embed = disnake.Embed(title="TTS 재생", description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**", color=0x00ff00)
-        await ctx.response.send_message(embed=embed, ephemeral=True)
+        await ctx.followup.send(embed=embed, ephemeral=True)
 
         # 재생이 끝날 때까지 대기
         while voice_client.is_playing():
@@ -2683,7 +2683,8 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
         return await send_error_message(ctx, f"{weapon_name} 아이템 정보를 찾을 수 없습니다.")
     
     item_price = item_info['price']
-    upgrade_cost = ((current_class + 1) * item_price * 0.002) * 2
+    global upgrade_cost
+    upgrade_cost = round((current_class + 1) * item_price * 0.002)
 
     # 사용자 캐시 조회
     user_cash = await get_cash_item_count(ctx.author.id)
@@ -2774,7 +2775,7 @@ async def handle_upgrade_failure(interaction, weapon_name, current_class, view):
     embed = disnake.Embed(color=0xff0000)
     embed.add_field(name="❌ 강화 실패", value=f"{weapon_name} 아이템의 강화에 실패했습니다.")
     embed.add_field(name="현재 등급", value=f"{current_class}강", inline=False)
-    embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
+    embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
     embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
     await interaction.response.edit_message(embed=embed, view=view)
 
