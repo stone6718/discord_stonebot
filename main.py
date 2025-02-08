@@ -2352,7 +2352,7 @@ weak_monsters = {
     "파이리": {"hp": 1200, "reward": 1300},
 }
 # 무너진도시
-strong_monsters = {
+citi_monsters = {
     "라이츄": {"hp": 1500, "reward": 1600},
     "리자몽": {"hp": 1800, "reward": 1900},
     "마기라스": {"hp": 2100, "reward": 2200},
@@ -2423,7 +2423,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     # 몬스터 선택
     monsters_dict = {
         "초원": weak_monsters,
-        "무너진도시": strong_monsters,
+        "무너진도시": citi_monsters,
         "지옥": hell_monsters
     }
     monsters = monsters_dict.get(monster_type, weak_monsters)
