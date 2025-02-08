@@ -2344,30 +2344,30 @@ async def set_monster_type_command(ctx, monster_type: str = commands.Param(name=
 
 # 초원
 weak_monsters = {
-    "메뚜기": {"hp": 300, "reward": 400},
-    "데구리": {"hp": 400, "reward": 500},
-    "거북이": {"hp": 600, "reward": 700},
-    "이상해씨": {"hp": 800, "reward": 900},
-    "피카츄": {"hp": 900, "reward": 1000},
-    "파이리": {"hp": 1200, "reward": 1300},
+    "메뚜기": {"hp": 350, "reward": 500},
+    "데구리": {"hp": 450, "reward": 600},
+    "거북이": {"hp": 600, "reward": 750},
+    "이상해씨": {"hp": 850, "reward": 1000},
+    "피카츄": {"hp": 1000, "reward": 1150},
+    "파이리": {"hp": 1200, "reward": 1400},
 }
 # 무너진도시
 citi_monsters = {
-    "라이츄": {"hp": 1500, "reward": 1600},
-    "리자몽": {"hp": 1800, "reward": 1900},
-    "마기라스": {"hp": 2100, "reward": 2200},
-    "리자드": {"hp": 2400, "reward": 2500},
-    "메타그로스": {"hp": 2700, "reward": 2800},
-    "메가리자몽": {"hp": 3000, "reward": 3100},
+    "라이츄": {"hp": 1500, "reward": 1700},
+    "리자몽": {"hp": 1800, "reward": 2000},
+    "마기라스": {"hp": 2150, "reward": 2350},
+    "리자드": {"hp": 2500, "reward": 2700},
+    "메타그로스": {"hp": 2850, "reward": 3100},
+    "메가리자몽": {"hp": 3100, "reward": 3400},
 }
 # 지옥
 hell_monsters = {
-    "용암진드기": {"hp": 3200, "reward": 3300},
-    "용암돼지": {"hp": 3500, "reward": 3600},
-    "저승사자": {"hp": 3800, "reward": 3900},
-    "가스트": {"hp": 4100, "reward": 4200},
-    "드래곤": {"hp": 4400, "reward": 4500},
-    "메가드래곤": {"hp": 4700, "reward": 4800},
+    "용암진드기": {"hp": 3400, "reward": 3800},
+    "용암돼지": {"hp": 3800, "reward": 4200},
+    "저승사자": {"hp": 4200, "reward": 4600},
+    "가스트": {"hp": 4600, "reward": 5200},
+    "드래곤": {"hp": 5000, "reward": 5450},
+    "메가드래곤": {"hp": 5400, "reward": 5900},
 }
 
 sword = ["나무검", "돌검", "철검", "단단한검", # 초원
@@ -2678,7 +2678,12 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
         return await send_error_message(ctx, "이미 최대 강화 등급(10강)입니다.")
 
     # 강화 비용 계산
-    upgrade_cost = (current_class + 1) * 100 + 100
+    item_info = await get_item_info(weapon_name)
+    if item_info is None:
+        return await send_error_message(ctx, f"{weapon_name} 아이템 정보를 찾을 수 없습니다.")
+    
+    item_price = item_info['price']
+    upgrade_cost = ((current_class + 1) * item_price * 0.002) * 2
 
     # 사용자 캐시 조회
     user_cash = await get_cash_item_count(ctx.author.id)
