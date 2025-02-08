@@ -2324,10 +2324,8 @@ class AuthButton(disnake.ui.View):
         button.disabled = True
 
 @bot.slash_command(name="몬스터타입설정", description="채널의 몬스터 타입을 설정합니다. [관리자전용]")
-async def set_monster_type_command(ctx, monster_type: str = commands.Param(name="타입", choices=["초원", "고수의땅", "지옥의땅"])):
+async def set_monster_type_command(ctx, monster_type: str = commands.Param(name="타입", choices=["초원", "무너진도시", "지옥"])):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     # 서버의 관리자인지 확인
     if not ctx.author.guild_permissions.manage_channels:
@@ -2346,47 +2344,48 @@ async def set_monster_type_command(ctx, monster_type: str = commands.Param(name=
 
 # 초원
 weak_monsters = {
-    "잉어킹": {"hp": 200, "reward": 400},
-    "데구리": {"hp": 300, "reward": 500},
-    "파이리": {"hp": 500, "reward": 700},
-    "메타몽": {"hp": 500, "reward": 700},
-    "라이츄": {"hp": 800, "reward": 1000},
-    "꼬부기": {"hp": 1100, "reward": 1300},
+    "메뚜기": {"hp": 300, "reward": 400},
+    "데구리": {"hp": 400, "reward": 500},
+    "거북이": {"hp": 600, "reward": 700},
+    "이상해씨": {"hp": 800, "reward": 900},
+    "피카츄": {"hp": 900, "reward": 1000},
+    "파이리": {"hp": 1200, "reward": 1300},
 }
-# 고수의땅
+# 무너진도시
 strong_monsters = {
-    "피카츄": {"hp": 1400, "reward": 1600},
-    "리자몽": {"hp": 1700, "reward": 1900},
-    "마기라스": {"hp": 2000, "reward": 2200},
-    "리자드": {"hp": 2000, "reward": 2200},
-    "메타그로스": {"hp": 2300, "reward": 2500},
-    "메가리자몽X": {"hp": 2600, "reward": 2800},
+    "라이츄": {"hp": 1500, "reward": 1600},
+    "리자몽": {"hp": 1800, "reward": 1900},
+    "마기라스": {"hp": 2100, "reward": 2200},
+    "리자드": {"hp": 2400, "reward": 2500},
+    "메타그로스": {"hp": 2700, "reward": 2800},
+    "메가리자몽": {"hp": 3000, "reward": 3100},
 }
-# 지옥의땅
+# 지옥
 hell_monsters = {
-    "지옥의벌래": {"hp": 2900, "reward": 3100},
-    "저승사자": {"hp": 3200, "reward": 3400},
-    "사신": {"hp": 3500, "reward": 3700},
-    "지옥의드래곤": {"hp": 3800, "reward": 4000},
-    "사탄": {"hp": 4100, "reward": 4300},
-    "지옥의왕": {"hp": 4400, "reward": 4600},
+    "용암진드기": {"hp": 3200, "reward": 3300},
+    "용암돼지": {"hp": 3500, "reward": 3600},
+    "저승사자": {"hp": 3800, "reward": 3900},
+    "가스트": {"hp": 4100, "reward": 4200},
+    "드래곤": {"hp": 4400, "reward": 4500},
+    "메가드래곤": {"hp": 4700, "reward": 4800},
 }
 
-sword = ["나무검", "돌검", "철검", "단단한검", "무적의검", "만용의검", "폭풍의검", "화염의검", "사신의괭이", "불의도끼"]
+sword = ["나무검", "돌검", "철검",
+         "단단한검", "무적의검", "만용의검",
+         "폭풍의검", "화염의검", "사신의낫",
+         "불타는도끼"]
 
 # 초원에서 사용할 수 없는 검 리스트
-veld_restricted_swords = ["만용의검", "폭풍의검", "화염의검", "사신의괭이", "불의도끼"]
-# 고수의땅에서 사용할 수 없는 검 리스트
-master_restricted_swords = ["나무검", "돌검", "철검", "화염의검", "사신의괭이", "불의도끼"]
-# 지옥의땅에서 사용할 수 없는 검 리스트
+veld_restricted_swords = ["만용의검", "폭풍의검", "화염의검", "사신의낫", "불타는도끼"]
+# 무너진도시에서 사용할 수 없는 검 리스트
+master_restricted_swords = ["나무검", "돌검", "철검", "화염의검", "사신의낫", "불타는도끼"]
+# 지옥에서 사용할 수 없는 검 리스트
 hell_restricted_swords = ["나무검", "돌검", "철검", "단단한검", "만용의검", "폭풍의검"]
 
 @bot.slash_command(name="몬스터사냥", description="랜덤 몬스터를 잡습니다.")
 async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", choices=sword)):
     if not await tos(ctx):
         return
-    #if not await inspection(ctx): # 점검중인 명령어 사용제한
-    #    return
     await ctx.response.defer()  # 응답 지연
 
     if ctx.author is None:
@@ -2413,8 +2412,8 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 
     # 초원 및 고수의 땅 제한 검사
     if (monster_type == "초원" and sword_name in veld_restricted_swords) or \
-       (monster_type == "고수의땅" and sword_name in master_restricted_swords) or \
-       (monster_type == "지옥의땅" and sword_name in hell_restricted_swords) or \
+       (monster_type == "무너진도시" and sword_name in master_restricted_swords) or \
+       (monster_type == "지옥" and sword_name in hell_restricted_swords) or \
        (monster_type is None and sword_name in veld_restricted_swords):
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="❌ 오류", value=f"{sword_name}은(는) 해당 지역에서 사용할 수 없습니다.")
@@ -2424,8 +2423,8 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     # 몬스터 선택
     monsters_dict = {
         "초원": weak_monsters,
-        "고수의땅": strong_monsters,
-        "지옥의땅": hell_monsters
+        "무너진도시": strong_monsters,
+        "지옥": hell_monsters
     }
     monsters = monsters_dict.get(monster_type, weak_monsters)
     monster_name = random.choice(list(monsters.keys()))
@@ -2506,8 +2505,6 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 @bot.slash_command(name="아이템사용", description="경험치 병을 사용하여 경험치를 증가시킵니다.")
 async def use_experience_potion(ctx, count: int = commands.Param(name="개수")):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -2625,8 +2622,6 @@ class NextButton(disnake.ui.Button):
 async def item_list(ctx):
     if not await tos(ctx):
         return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
-        return
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "아이템목록", None)
@@ -2664,8 +2659,6 @@ upgrade_chances = {
 @bot.slash_command(name="강화", description="아이템을 강화합니다.")
 async def upgrade_item(ctx, item_name: str):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -2793,8 +2786,6 @@ async def send_error_message(interaction, message):
 async def item_trading(ctx, item_name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), count: int = commands.Param(name="개수", default=1)):
     if not await tos(ctx):
         return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
-        return
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "아이템거래", f"{item_name}, {choice}, {count}")
@@ -2816,7 +2807,7 @@ async def item_trading(ctx, item_name: str = commands.Param(name="이름"), choi
         total_price = item_price * count
 
         if choice == "구매":
-            if item_name in ["나무검", "돌검", "철검", "단단한검", "무적의검", "만용의검", "폭풍의검", "화염의검", "사신의괭이", "불의도끼"]:
+            if item_name in ["나무검", "돌검", "철검", "단단한검", "무적의검", "만용의검", "폭풍의검", "화염의검", "사신의낫", "불타는도끼"]:
                 user_item_quantity = await get_user_item_count(ctx.author.id, item_name)  # 사용자의 아이템 수량 조회
                 if user_item_quantity >= 1:
                     raise ValueError(f"{item_name}은(는) 이미 1개 보유하고 있습니다. 추가 구매할 수 없습니다.")
@@ -2895,8 +2886,6 @@ class ItemView2(disnake.ui.View):
 @bot.slash_command(name="인벤토리", description="보유 중인 아이템을 확인합니다.")
 async def inventory(ctx):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
