@@ -2370,17 +2370,16 @@ hell_monsters = {
     "메가드래곤": {"hp": 4700, "reward": 4800},
 }
 
-sword = ["나무검", "돌검", "철검",
-         "단단한검", "무적의검", "만용의검",
-         "폭풍의검", "화염의검", "사신의낫",
-         "불타는도끼"]
+sword = ["나무검", "돌검", "철검", "단단한검", # 초원
+         "무적의검", "만용의검", "폭풍의검", # 무너진도시
+         "화염의검", "사신의낫", "불타는도끼"] # 지옥
 
 # 초원에서 사용할 수 없는 검 리스트
-veld_restricted_swords = ["만용의검", "폭풍의검", "화염의검", "사신의낫", "불타는도끼"]
+veld_restricted_swords = ["무적의검", "만용의검", "폭풍의검", "화염의검", "사신의낫", "불타는도끼"]
 # 무너진도시에서 사용할 수 없는 검 리스트
-master_restricted_swords = ["나무검", "돌검", "철검", "화염의검", "사신의낫", "불타는도끼"]
+master_restricted_swords = ["나무검", "돌검", "철검", "단단한검", "화염의검", "사신의낫", "불타는도끼"]
 # 지옥에서 사용할 수 없는 검 리스트
-hell_restricted_swords = ["나무검", "돌검", "철검", "단단한검", "만용의검", "폭풍의검"]
+hell_restricted_swords = ["나무검", "돌검", "철검", "단단한검","무적의검", "만용의검", "폭풍의검"]
 
 @bot.slash_command(name="몬스터사냥", description="랜덤 몬스터를 잡습니다.")
 async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", choices=sword)):
@@ -2575,11 +2574,12 @@ class ItemView(disnake.ui.View):
         if self.current_page < self.max_page:
             self.add_item(NextButton())
 
-    async def update_message(self, ctx=None):
+    async def update_message(self, interaction=None):
         embed = await self.create_embed()
         self.update_buttons()
-        if ctx:
-            await ctx.followup.edit_message(embed=embed, view=self)
+        if interaction:
+            await interaction.response.defer()
+            await interaction.edit_original_message(embed=embed, view=self)
         elif self.message:
             await self.message.edit(embed=embed, view=self)
 
@@ -2590,7 +2590,7 @@ class ItemView(disnake.ui.View):
 
         for item in self.data[start:end]:
             if len(item) == 4:
-                name, price, damage, add_exp = item
+                name, price, add_exp, damage = item
                 embed.add_field(name=name, value=f"가격: {price:,}원 | 피해: {damage} | 경험치: {add_exp}", inline=False)
             else:
                 print(f"아이템 데이터 오류: {item}")
