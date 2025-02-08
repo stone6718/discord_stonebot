@@ -2644,16 +2644,16 @@ async def view_update3(view: ItemView):
 
 # 강화 확률을 정의합니다.
 upgrade_chances = {
-    1: 0.85,
-    2: 0.80,
-    3: 0.75,
-    4: 0.70,
-    5: 0.65,
-    6: 0.60,
-    7: 0.50,
-    8: 0.40,
-    9: 0.30,
-    10: 0.20,
+    1: 0.90,
+    2: 0.85,
+    3: 0.80,
+    4: 0.75,
+    5: 0.70,
+    6: 0.65,
+    7: 0.60,
+    8: 0.50,
+    9: 0.40,
+    10: 0.30,
 }
 
 @bot.slash_command(name="강화", description="무기를 강화합니다.")
@@ -2685,9 +2685,6 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
     if user_cash < upgrade_cost:
         return await send_error_message(ctx, "캐시가 부족하여 강화할 수 없습니다.")
 
-    # 캐시 차감
-    await remove_cash_item_count(ctx.author.id, upgrade_cost)
-
     # 버튼 생성
     view = await create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost)
 
@@ -2704,7 +2701,7 @@ async def create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost):
     view.add_item(cancel_button)
 
     # 버튼 콜백 설정
-    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, weapon_name, current_class, view)
+    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view)
     cancel_button.callback = lambda interaction: cancel_callback(interaction)
 
     return view
@@ -2716,9 +2713,17 @@ async def create_upgrade_embed(weapon_name, current_class, upgrade_cost):
     embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
     return embed
 
-async def upgrade_callback(interaction, weapon_name, current_class, view):
+async def upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view):
     if interaction.user.id != interaction.author.id:
         return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
+
+    # 사용자 캐시 조회
+    user_cash = await get_cash_item_count(interaction.author.id)
+    if user_cash < upgrade_cost:
+        return await send_error_message(interaction, "캐시가 부족하여 강화할 수 없습니다.")
+
+    # 캐시 차감
+    await remove_cash_item_count(interaction.author.id, upgrade_cost)
 
     # 강화 중 파괴 확률 체크
     if await handle_destruction(interaction, weapon_name):
@@ -2760,9 +2765,10 @@ async def handle_upgrade_success(interaction, weapon_name, current_class, view):
 
 async def handle_upgrade_failure(interaction, weapon_name, current_class, view):
     await update_item_class(interaction.author.id, weapon_name, current_class)
+    
     embed = disnake.Embed(color=0xff0000)
     embed.add_field(name="❌ 강화 실패", value=f"{weapon_name} 아이템의 강화에 실패했습니다.")
-    embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
+    embed.add_field(name="현재 등급", value=f"{current_class}강", inline=False)
     embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
     embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
     await interaction.response.edit_message(embed=embed, view=view)
