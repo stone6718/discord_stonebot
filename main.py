@@ -3636,7 +3636,7 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
             embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="삭제할 메시지를 찾을 수 없습니다.")
             await ctx.send(embed=embed)  # 응답 전송
-        except Exception as e:
+        except Exception:
             embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="메시지 삭제에 실패했습니다.")
             await ctx.send(embed=embed)  # 응답 전송
@@ -3900,7 +3900,7 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
                 embed = disnake.Embed(color=embederrorcolor)
                 embed.add_field(name="❌ 오류", value="이미 DM 수신이 비활성화되어 있습니다.")
             elif state == "off" and current_state == 1:
-                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (1, ctx.author.id))
+                await aiocursor.execute("UPDATE user SET dm_on_off=? WHERE id=?", (0, ctx.author.id))
                 await economy_aiodb.commit()
                 embed = disnake.Embed(color=embedsuccess)
                 embed.add_field(name="✅ DM 수신 비활성화", value="이제 DM을 수신하지 않습니다.")
@@ -4885,6 +4885,7 @@ async def startup():
         economy_aiodb = await aiosqlite.connect(db_path)
 
 async def shutdown():
+    global aiodb
     for aiodb_instance in aiodb.values():
         await aiodb_instance.close()
     await economy_aiodb.close()
