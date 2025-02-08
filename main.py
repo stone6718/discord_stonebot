@@ -2656,22 +2656,22 @@ upgrade_chances = {
     10: 0.20,
 }
 
-@bot.slash_command(name="강화", description="아이템을 강화합니다.")
-async def upgrade_item(ctx, item_name: str):
+@bot.slash_command(name="강화", description="무기를 강화합니다.")
+async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", choices=sword)):
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):
         return
     
-    await command_use_log(ctx, "아이템강화", f"{item_name}")
+    await command_use_log(ctx, "아이템강화", f"{weapon_name}")
     if not await member_status(ctx):
         return
 
     # 사용자 인벤토리에서 아이템 정보 가져오기
-    item_info = await get_user_item_class(ctx.author.id, item_name)
+    item_info = await get_user_item_class(ctx.author.id, weapon_name)
 
     if not item_info:
-        return await send_error_message(ctx, f"{item_name} 아이템이 인벤토리에 없습니다.")
+        return await send_error_message(ctx, f"{weapon_name} 아이템이 인벤토리에 없습니다.")
 
     current_class = item_info[1]  # 현재 강화 등급
     if current_class >= 10:
@@ -2689,13 +2689,13 @@ async def upgrade_item(ctx, item_name: str):
     await remove_cash_item_count(ctx.author.id, upgrade_cost)
 
     # 버튼 생성
-    view = await create_upgrade_view(ctx, item_name, current_class, upgrade_cost)
+    view = await create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost)
 
     # 초기 메시지 전송
-    embed = await create_upgrade_embed(item_name, current_class, upgrade_cost)
+    embed = await create_upgrade_embed(weapon_name, current_class, upgrade_cost)
     await ctx.send(embed=embed, view=view)
 
-async def create_upgrade_view(ctx, item_name, current_class, upgrade_cost):
+async def create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost):
     upgrade_button = disnake.ui.Button(label="강화", style=disnake.ButtonStyle.primary)
     cancel_button = disnake.ui.Button(label="강화 취소", style=disnake.ButtonStyle.danger)
 
@@ -2704,24 +2704,24 @@ async def create_upgrade_view(ctx, item_name, current_class, upgrade_cost):
     view.add_item(cancel_button)
 
     # 버튼 콜백 설정
-    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, item_name, current_class, view)
+    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, weapon_name, current_class, view)
     cancel_button.callback = lambda interaction: cancel_callback(interaction)
 
     return view
 
-async def create_upgrade_embed(item_name, current_class, upgrade_cost):
+async def create_upgrade_embed(weapon_name, current_class, upgrade_cost):
     embed = disnake.Embed(title="아이템 강화", color=0x00ffff)
-    embed.add_field(name="강화할 아이템", value=item_name, inline=False)
+    embed.add_field(name="강화할 아이템", value=weapon_name, inline=False)
     embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
     embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
     return embed
 
-async def upgrade_callback(interaction, item_name, current_class, view):
+async def upgrade_callback(interaction, weapon_name, current_class, view):
     if interaction.user.id != interaction.author.id:
         return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
     # 강화 중 파괴 확률 체크
-    if await handle_destruction(interaction, item_name):
+    if await handle_destruction(interaction, weapon_name):
         return
 
     # 강화 성공 확률 확인
@@ -2730,38 +2730,38 @@ async def upgrade_callback(interaction, item_name, current_class, view):
         return await send_error_message(interaction, "강화 성공 확률 정보를 찾을 수 없습니다.")
 
     if random.random() <= success_chance:
-        await handle_upgrade_success(interaction, item_name, current_class, view)
+        await handle_upgrade_success(interaction, weapon_name, current_class, view)
     else:
-        await handle_upgrade_failure(interaction, item_name, current_class, view)
+        await handle_upgrade_failure(interaction, weapon_name, current_class, view)
 
-async def handle_destruction(interaction, item_name):
+async def handle_destruction(interaction, weapon_name):
     destruction_chance = random.random()
     if destruction_chance <= 0.05:  # 5% 확률로 파괴
         defense_item_info = await get_user_item(interaction.author.id, "파괴방어권")
         if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
             await remove_item_from_user_inventory(interaction.author.id, "파괴방어권", 1)
             embed = disnake.Embed(color=0x00ff00)
-            embed.add_field(name="✅ 방어 성공", value=f"{item_name} 아이템이 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
+            embed.add_field(name="✅ 방어 성공", value=f"{weapon_name} 아이템이 파괴되지 않았습니다! '파괴방어권'이 사용되었습니다.")
             await interaction.response.edit_message(embed=embed, view=None)
             return True  # 방어 성공
-        await remove_item_from_user_inventory(interaction.author.id, item_name, 1)
+        await remove_item_from_user_inventory(interaction.author.id, weapon_name, 1)
         embed = disnake.Embed(color=0xff0000)
-        embed.add_field(name="❌ 아이템 파괴", value=f"{item_name} 아이템이 파괴되었습니다.")
+        embed.add_field(name="❌ 아이템 파괴", value=f"{weapon_name} 아이템이 파괴되었습니다.")
         await interaction.response.edit_message(embed=embed, view=None)
         return True  # 아이템 파괴
     return False  # 파괴되지 않음
 
-async def handle_upgrade_success(interaction, item_name, current_class, view):
+async def handle_upgrade_success(interaction, weapon_name, current_class, view):
     new_class = current_class + 1
-    await update_item_class(interaction.author.id, item_name, new_class)
+    await update_item_class(interaction.author.id, weapon_name, new_class)
     embed = disnake.Embed(color=0x00ff00)
-    embed.add_field(name="✅ 강화 성공", value=f"{item_name} 아이템이 {new_class}강으로 강화되었습니다.")
+    embed.add_field(name="✅ 강화 성공", value=f"{weapon_name} 아이템이 {new_class}강으로 강화되었습니다.")
     await interaction.response.edit_message(embed=embed, view=None)
 
-async def handle_upgrade_failure(interaction, item_name, current_class, view):
-    await update_item_class(interaction.author.id, item_name, current_class)
+async def handle_upgrade_failure(interaction, weapon_name, current_class, view):
+    await update_item_class(interaction.author.id, weapon_name, current_class)
     embed = disnake.Embed(color=0xff0000)
-    embed.add_field(name="❌ 강화 실패", value=f"{item_name} 아이템의 강화에 실패했습니다.")
+    embed.add_field(name="❌ 강화 실패", value=f"{weapon_name} 아이템의 강화에 실패했습니다.")
     embed.add_field(name="현재 강화 등급", value=f"{current_class}강", inline=False)
     embed.add_field(name="비용", value=f"{(current_class + 1) * 100 + 100} 캐시", inline=False)
     embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
