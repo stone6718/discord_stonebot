@@ -859,44 +859,166 @@ async def connect_db():
 waiting_songs = defaultdict(list)
 voice_clients = {}
 
-@bot.slash_command(name='재생', description="음악을 재생합니다.")
-async def play(ctx, search: str):
-    if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
-        return
+@bot.slash_command(name='재생', description='유튜브 링크 또는 제목으로 음악을 재생합니다.')
+async def play(ctx, url_or_name: str):
+    await ctx.response.defer()
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "재생", f"{search}")
-    if not await member_status(ctx):
-        return
 
-    voice_channel = ctx.author.voice.channel if ctx.author.voice else None
-    if voice_channel is None:
-        return await ctx.send("음성 채널에 들어가야 합니다.", ephemeral=True)
+    await command_use_log(ctx, "재생", url_or_name)
 
-    voice_client = disnake.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice_client is None:
-        voice_client = await voice_channel.connect()
+    if ctx.author.voice is None:
+        return await ctx.send("음성 채널에 연결되어 있지 않습니다. 먼저 음성 채널에 들어가세요.")
+
+    channel_id = ctx.author.voice.channel.id
+    voice_client = await connect_voice_client(ctx, channel_id)
+
+    if voice_client.is_playing():
+        waiting_songs[channel_id].append(url_or_name)
+        return await ctx.send(f"현재 음악이 재생 중입니다. '{url_or_name}'가 끝나면 재생됩니다.")
+
+    if await is_playlist(url_or_name):
+        await handle_playlist(ctx, url_or_name, channel_id)
     else:
-        await voice_client.move_to(voice_channel)
+        await play_song(ctx, channel_id, url_or_name)
+
+async def connect_voice_client(ctx, channel_id):
+    if channel_id not in voice_clients or not voice_clients[channel_id].is_connected():
+        try:
+            voice_client = await ctx.author.voice.channel.connect()
+            voice_clients[channel_id] = voice_client
+        except disnake.ClientException:
+            voice_client = voice_clients[channel_id]
+    return voice_clients[channel_id]
+
+async def handle_playlist(ctx, url_or_name, channel_id):
+    playlist_owner = await get_playlist_owner(url_or_name)
+    if playlist_owner != ctx.author.id:
+        return await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description="이 플레이리스트의 소유자가 아닙니다."))
+
+    songs = await get_songs_from_playlist(url_or_name)
+    waiting_songs[channel_id].extend(songs)
+    await play_next_song(ctx, channel_id)
+
+async def play_song(ctx, channel_id, url_or_name):
+    voice_client = voice_clients.get(channel_id)
+    voice_client = voice_clients.get(channel_id)
+
+    if voice_client is None or not voice_client.is_connected():
+        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
 
     try:
-        if not search.startswith("http"):
-            search = f"ytsearch:{search}"
-        player = await YTDLSource.from_url(search, loop=bot.loop, stream=True)
-        voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
-        embed = disnake.Embed(title="음악 재생", description=f"**{player.title}**을(를) 재생합니다.", color=0x00ff00)
-        embed.set_thumbnail(url=player.thumbnail)
-        await ctx.send(embed=embed)
-        while voice_client.is_playing():
-            await asyncio.sleep(1)
-
-        embed = disnake.Embed(title="음악 재생", description=f"**{player.title}**을(를) 재생합니다.", color=0x00ff00)
-        embed.set_thumbnail(url=player.thumbnail)
-        await ctx.send(embed=embed)
+        player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
+        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if e is None else print(f"Error: {e}"))
+        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description='')
+        if player.thumbnail:
+            embed.set_image(url=player.thumbnail)
+            embed.description = f"{player.title}"
+        
+        # 음악 길이와 현재 재생 분초 표시
+        duration = player.data.get('duration')
+        if duration:
+            days, remainder = divmod(duration, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            if days > 0:
+                embed.add_field(name="길이", value=f"{days}일 {hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+            elif hours > 0:
+                embed.add_field(name="길이", value=f"{hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+            else:
+                embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
+        
+        await send_control_buttons(ctx, embed)
     except Exception as e:
-        await ctx.send(f"음악을 재생하는 중 오류가 발생했습니다: {str(e)}")
+        await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
+
+async def play_next_song(ctx, channel_id):
+    if not waiting_songs[channel_id]:
+        return await ctx.send("대기열이 비어 있습니다.")
+
+    next_song = waiting_songs[channel_id].pop(0)
+    await play_song(ctx, channel_id, next_song)
+
+@asynccontextmanager
+async def connect_db():
+    db_path = os.path.join('system_database', 'music.db')
+    conn = await aiosqlite.connect(db_path)
+    try:
+        yield conn
+    finally:
+        await conn.close()
+
+async def is_playlist(name):
+    async with connect_db() as conn:
+        cursor = await conn.execute("SELECT COUNT(DISTINCT playlist_name) FROM playlists WHERE playlist_name = ?", (name,))
+        result = await cursor.fetchone()
+        return result[0] > 0
+
+async def get_playlist_owner(playlist_name):
+    async with connect_db() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT user_id FROM playlists WHERE playlist_name = ?", (playlist_name,))
+            owner = await cursor.fetchone()
+    return owner[0] if owner else None
+
+async def get_songs_from_playlist(playlist_name):
+    async with connect_db() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT song FROM playlists WHERE playlist_name = ?", (playlist_name,))
+            return [row[0] for row in await cursor.fetchall()]
+
+async def send_control_buttons(ctx, embed):
+    buttons = [
+        disnake.ui.Button(label="일시 정지", style=disnake.ButtonStyle.red, custom_id="pause"),
+        disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
+        disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_change"),
+        disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
+    ]
+
+    button_row = disnake.ui.View(timeout=None)
+    for button in buttons:
+        button_row.add_item(button)
+
+    await ctx.send(embed=embed, view=button_row)
+
+    button_row.children[0].callback = pause_callback
+    button_row.children[1].callback = resume_callback
+    button_row.children[2].callback = volume_change_callback
+    button_row.children[3].callback = change_song_callback
+
+async def pause_callback(interaction):
+    interaction.guild.voice_client.pause()
+    await interaction.response.send_message("음악이 일시 정지되었습니다.", ephemeral=True)
+async def resume_callback(interaction):
+    if interaction.guild.voice_client.is_paused():
+        interaction.guild.voice_client.resume()
+        await interaction.response.send_message("음악이 다시 재생되었습니다.", ephemeral=True)
+    else:
+        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
+        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
+
+async def volume_change_callback(interaction):
+    await interaction.response.send_modal(VolumeChangeModal())
+
+async def change_song_callback(interaction):
+    await interaction.response.send_message("변경할 음악의 유튜브 링크 또는 음악 제목을 입력해주세요:", ephemeral=True)
+
+    def check(m):
+        return m.author == interaction.author and m.channel == interaction.channel
+
+    try:
+        msg = await bot.wait_for('message', check=check, timeout=30.0)
+        new_url_or_name = msg.content
+        new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
+
+        interaction.guild.voice_client.stop()
+        interaction.guild.voice_client.play(new_player)
+
+        change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
+        await interaction.followup.send(embed=change_embed, ephemeral=True)
+
+    except asyncio.TimeoutError:
+        await interaction.followup.send("시간이 초과되었습니다. 다시 시도해주세요.", ephemeral=True)
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -2353,21 +2475,21 @@ weak_monsters = {
 }
 # 무너진도시
 citi_monsters = {
-    "라이츄": {"hp": 1500, "reward": 1700},
-    "리자몽": {"hp": 1800, "reward": 2000},
-    "마기라스": {"hp": 2150, "reward": 2350},
-    "리자드": {"hp": 2500, "reward": 2700},
-    "메타그로스": {"hp": 2850, "reward": 3100},
-    "메가리자몽": {"hp": 3100, "reward": 3400},
+    "라이츄": {"hp": 1500, "reward": 1900},
+    "리자몽": {"hp": 1800, "reward": 2200},
+    "마기라스": {"hp": 2150, "reward": 2550},
+    "리자드": {"hp": 2500, "reward": 2900},
+    "메타그로스": {"hp": 2850, "reward": 3300},
+    "메가리자몽": {"hp": 3100, "reward": 3600},
 }
 # 지옥
 hell_monsters = {
-    "용암진드기": {"hp": 3400, "reward": 3800},
-    "용암돼지": {"hp": 3800, "reward": 4200},
-    "저승사자": {"hp": 4200, "reward": 4600},
-    "가스트": {"hp": 4600, "reward": 5200},
-    "드래곤": {"hp": 5000, "reward": 5450},
-    "메가드래곤": {"hp": 5400, "reward": 5900},
+    "용암진드기": {"hp": 3400, "reward": 4100},
+    "용암돼지": {"hp": 3800, "reward": 4500},
+    "저승사자": {"hp": 4200, "reward": 4900},
+    "가스트": {"hp": 4600, "reward": 5300},
+    "드래곤": {"hp": 5000, "reward": 5750},
+    "메가드래곤": {"hp": 5400, "reward": 6200},
 }
 
 sword = ["나무검", "돌검", "철검", "단단한검", # 초원
@@ -2468,7 +2590,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         sword_destroy_chance = random.randint(1, 101)
         defense_item_info = await get_user_item(user_id, "파괴방어권")
 
-        if sword_destroy_chance <= 15:  # 10% 확률로 칼이 파괴됨
+        if sword_destroy_chance <= 15:  # 15% 확률로 칼이 파괴됨
             if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(title="❌ 전투 실패", description="무기가 파괴될뻔했지만, 방어권 사용으로 파괴되지 않았습니다.", color=0x00ff00)
@@ -2684,7 +2806,7 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
     
     item_price = item_info['price']
     global upgrade_cost
-    upgrade_cost = round((current_class + 1) * item_price * 0.002)
+    upgrade_cost = round(((current_class + 1) * (item_price * 0.1) * 0.002) * 0.9)
 
     # 사용자 캐시 조회
     user_cash = await get_cash_item_count(ctx.author.id)
