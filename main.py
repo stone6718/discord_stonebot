@@ -935,7 +935,11 @@ async def play_song(ctx, channel_id, url_or_name):
 
 async def play_next_song(ctx, channel_id):
     if not waiting_songs[channel_id]:
-        return await ctx.send("대기열이 비어 있습니다.")
+        channel = bot.get_channel(ctx.channel.id)
+        if channel:
+            return await channel.send("대기열이 비어 있습니다.")
+        else:
+            return
 
     next_song = waiting_songs[channel_id].pop(0)
     await play_song(ctx, channel_id, next_song)
@@ -1238,6 +1242,52 @@ async def remove_from_playlist(ctx, playlist_name: str, song: str):
             embed.add_field(name="정보", value=f"{playlist_name} 플레이리스트에 {song}이(가) 없습니다.", inline=False)
 
         await ctx.send(embed=embed)
+
+@bot.slash_command(name='통계', description='봇의 통계를 확인합니다.')
+async def statistics(ctx):
+    if not await tos(ctx):
+        return
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "통계", None)
+
+    db_path = os.path.join('system_database', 'log.db')
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.cursor() as cursor:
+            # 오늘 날짜의 명령어 사용 수 조회
+            today = datetime.now().strftime('%Y-%m-%d')
+            await cursor.execute("SELECT COUNT(*) FROM command WHERE DATE(time) = ?", (today,))
+            command_count_today = await cursor.fetchone()
+            command_count_today = command_count_today[0] if command_count_today else 0
+
+            # 오늘 날짜의 많이 사용된 명령어 5개 조회
+            await cursor.execute("SELECT command, COUNT(*) as count FROM command WHERE DATE(time) = ? GROUP BY command ORDER BY count DESC LIMIT 5", (today,))
+            top_commands = await cursor.fetchall()
+
+    # 새로운 서버 수와 나간 서버 수 조회
+    db_path = os.path.join('system_database', 'system.db')
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT new_server FROM info")
+            new_servers = await cursor.fetchone()
+            new_servers_count = new_servers[0] if new_servers else 0
+
+            await cursor.execute("SELECT lose_server FROM info")
+            left_servers = await cursor.fetchone()
+            left_servers_count = left_servers[0] if left_servers else 0
+
+    embed = disnake.Embed(title="봇 통계", color=0x00ff00)
+    embed.add_field(name="서버 통계", value=f'''현재 서버 수 : {len(bot.guilds)}개\n오늘 추가된 서버 : {new_servers_count}개\n오늘 삭제된 서버 : {left_servers_count}개''', inline=False)
+    embed.add_field(name="기타 통계", value=f'''현재 유저 수 : {sum(len(guild.members) for guild in bot.guilds)}명\n현재 채널 수 : {len([channel for channel in bot.get_all_channels()])}개''', inline=False)
+    embed.add_field(name="명령어 통계", value=f"오늘 사용된 명령어 수 : {command_count_today}회", inline=False)
+
+    if top_commands:
+        top_commands_str = "\n".join([f"{command}: {count}회" for command, count in top_commands])
+        embed.add_field(name="", value=f"오늘 많이 사용된 명령어 TOP 5\n{top_commands_str}", inline=False)
+    else:
+        embed.add_field(name="", value="오늘 많이 사용된 명령어 TOP 5\n데이터 없음", inline=False)
+
+    await ctx.send(embed=embed)
 
 class verify_Modal_Captcha(disnake.ui.Modal):
     def __init__(self):
@@ -1560,7 +1610,7 @@ async def email_verify(ctx, email: str):
     await ctx.response.send_modal(modal=verify_Modal_EMAIL())
 
 @bot.slash_command(name="지갑", description="자신이나 다른 유저의 지갑을 조회합니다.")
-async def wallet(ctx, member_id: str = None):
+async def wallet(ctx, member_id: int = None):
     if not await check_permissions(ctx):
         return
 
@@ -1680,6 +1730,7 @@ async def earn_money(ctx):
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
 async def check_in(ctx):
+    await ctx.response.defer()
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):
@@ -1724,7 +1775,7 @@ async def check_in(ctx):
                 await ctx.send(embed=embed)
                 economy_log(ctx, "출석체크", "0", 0)
 
-@bot.slash_command(name="송금", description="돈 송금")
+@bot.slash_command(name="송금", description="다른사람에게 돈을 송금합니다.")
 async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는사람"), money: int = commands.Param(name="금액")):
     if not await tos(ctx):
         return
@@ -1767,7 +1818,7 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
     await removemoney(send_user.id, money) 
     await economy_log(send_user, "송금", "-", money)
     await addmoney(get_user.id, money)
-    await economy_log(get_user, "송금", "+", money)
+    await economy_log(ctx, "송금", "+", money)
     embed = disnake.Embed(title="송금 완료", color=embedsuccess)
     embed.add_field(name="송금인", value=f"{send_user.mention}")
     embed.add_field(name="받는사람", value=f"{get_user.mention}")
@@ -2093,20 +2144,22 @@ async def baccarat(ctx):
     # 데이터베이스 연결 종료
     conn.close()
 
-@bot.slash_command(name="로또구매", description="로또을 구매합니다.")
-async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str = None):
+@bot.slash_command(name="로또구매", description="로또를 구매합니다.")
+async def purchase_lottery(ctx, auto: str = commands.Param(name="종류", choices=["자동", "수동"], default="자동"),
+                           count: int = commands.Param(name="개수", default=1),
+                           numbers: str = commands.Param(name="번호", default=None)):
     if not await tos(ctx):
         return
     user_id = ctx.author.id
 
     # 최대 구매 개수 제한
     if count > 100:
-        await ctx.send("최대 100개까지 로또을 구매할 수 있습니다.")
+        await ctx.send("최대 100개까지 로또를 구매할 수 있습니다.")
         return
 
     # 로또 음수제한
     if count < 1:
-        await ctx.send("로또는 1개이상만 구매할수 있습니다.")
+        await ctx.send("로또는 1개 이상만 구매할 수 있습니다.")
         return
 
     # 사용자의 잔액을 가져옵니다.
@@ -2114,7 +2167,7 @@ async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str
     
     total_cost = count * 10000  # 총 비용 계산
     if get_money < total_cost:
-        await ctx.send("잔액이 부족하여 로또을 구매할 수 없습니다.")
+        await ctx.send("잔액이 부족하여 로또를 구매할 수 없습니다.")
         return
 
     # 잔액 차감
@@ -2129,7 +2182,7 @@ async def purchase_lottery(ctx, auto: bool = False, count: int = 1, numbers: str
     # 텍스트 파일 경로
     text_file_path = os.path.join('system_database', 'purchased_lotteries.txt')
 
-    if auto:
+    if auto == "자동":
         async with aiosqlite.connect(db_path) as db:
             for _ in range(count):
                 lottery_numbers = random.sample(range(1, 46), 6)
@@ -2815,7 +2868,7 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
     embed = await create_upgrade_embed(weapon_name, current_class, upgrade_cost)
     await ctx.send(embed=embed, view=view)
 
-async def create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost):
+async def create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost, interaction_user_id):
     upgrade_button = disnake.ui.Button(label="강화", style=disnake.ButtonStyle.primary)
     cancel_button = disnake.ui.Button(label="강화 취소", style=disnake.ButtonStyle.danger)
 
@@ -2824,8 +2877,8 @@ async def create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost):
     view.add_item(cancel_button)
 
     # 버튼 콜백 설정
-    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view)
-    cancel_button.callback = lambda interaction: cancel_callback(interaction)
+    upgrade_button.callback = lambda interaction: upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view, interaction_user_id)
+    cancel_button.callback = lambda interaction: cancel_callback(interaction, interaction_user_id)
 
     return view
 
@@ -2836,8 +2889,8 @@ async def create_upgrade_embed(weapon_name, current_class, upgrade_cost):
     embed.add_field(name="비용", value=f"{upgrade_cost} 캐시", inline=False)
     return embed
 
-async def upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view):
-    if interaction.user.id != interaction.author.id:
+async def upgrade_callback(interaction, weapon_name, current_class, upgrade_cost, view, interaction_user_id):
+    if interaction.user.id != interaction_user_id:
         return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
     # 사용자 캐시 조회
@@ -2896,8 +2949,8 @@ async def handle_upgrade_failure(interaction, weapon_name, current_class, view):
     embed.add_field(name="팁", value="다시 시도하거나 다른 아이템을 강화해 보세요!", inline=False)
     await interaction.response.edit_message(embed=embed, view=view)
 
-async def cancel_callback(interaction):
-    if interaction.user.id != interaction.author.id:
+async def cancel_callback(interaction, interaction_user_id):
+    if interaction.user.id != interaction_user_id:
         return await send_error_message(interaction, "이 버튼은 호출자만 사용할 수 있습니다.")
 
     embed = disnake.Embed(color=0xff0000)
