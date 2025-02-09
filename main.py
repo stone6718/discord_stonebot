@@ -902,7 +902,6 @@ async def handle_playlist(ctx, url_or_name, channel_id):
 
 async def play_song(ctx, channel_id, url_or_name):
     voice_client = voice_clients.get(channel_id)
-    voice_client = voice_clients.get(channel_id)
 
     if voice_client is None or not voice_client.is_connected():
         return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
@@ -929,6 +928,8 @@ async def play_song(ctx, channel_id, url_or_name):
                 embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
         
         await send_control_buttons(ctx, embed)
+        await send_webhook_message("음악 재생", f"{ctx.author.id}님이 {player.title}을(를) 재생했습니다.")
+
     except Exception as e:
         await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
 
@@ -1018,7 +1019,13 @@ async def change_song_callback(interaction):
         await interaction.followup.send(embed=change_embed, ephemeral=True)
 
     except asyncio.TimeoutError:
-        await interaction.followup.send("시간이 초과되었습니다. 다시 시도해주세요.", ephemeral=True)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="시간이 초과되었습니다. 다시 시도해주세요.")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    except IndexError:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="오류: 리스트 인덱스가 범위를 벗어났습니다.")
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -1045,8 +1052,6 @@ async def join(ctx):
 @bot.slash_command(name='볼륨', description="플레이어의 볼륨을 변경합니다.")
 async def volume(ctx, volume: int):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -1083,8 +1088,6 @@ async def stop(ctx):
 async def pause(ctx):
     if not await tos(ctx):
         return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
-        return
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "일시정지", None)
@@ -1101,8 +1104,6 @@ async def pause(ctx):
 @bot.slash_command(name='다시재생', description="일시중지된 음악을 다시 재생합니다.")
 async def resume(ctx):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -1137,8 +1138,6 @@ MAX_PLAYLISTS = {
 async def view_playlist(ctx, playlist_name: str):
     if not await tos(ctx):
         return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
-        return
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "플레이리스트", f"{playlist_name}")
@@ -1161,8 +1160,6 @@ async def view_playlist(ctx, playlist_name: str):
 @bot.slash_command(name='플레이리스트_추가', description='플레이리스트에 음악을 추가합니다.')
 async def add_to_playlist(ctx, playlist_name: str, song: str):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -1223,8 +1220,6 @@ async def add_to_playlist(ctx, playlist_name: str, song: str):
 @bot.slash_command(name='플레이리스트_삭제', description='플레이리스트에서 음악을 삭제합니다.')
 async def remove_from_playlist(ctx, playlist_name: str, song: str):
     if not await tos(ctx):
-        return
-    if not await inspection(ctx): # 점검중인 명령어 사용제한
         return
     if not await check_permissions(ctx):
         return
@@ -4675,17 +4670,28 @@ async def on_shard_resumed(shard_id):
     print(f"{shard_id} 샤드가 다시 연결되었습니다.")
     await send_webhook_message(f"{shard_id} 샤드가 다시 연결되었습니다.")
 
+async def update_server_count(update_type):
+    db_path = os.path.join('system_database', 'system.db')
+    async with aiosqlite.connect(db_path) as conn:
+        if update_type == "new":
+            await conn.execute("UPDATE info SET new_server = new_server + 1")
+        elif update_type == "lose":
+            await conn.execute("UPDATE info SET lose_server = lose_server + 1")
+        await conn.commit()
+
 @bot.event
 async def on_guild_join(guild):
     await database_create_server_join(guild.id)
     print(f'새로운 서버에 입장했습니다: {guild.name} (ID: {guild.id})')
     await send_webhook_message(f"새로운 서버에 입장했습니다: {guild.name} (ID: {guild.id})")
+    await update_server_count("new")
 
 @bot.event
 async def on_guild_remove(guild):
     await delete_server_database(guild.id)
     print(f'서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})')
     await send_webhook_message(f"서버에서 퇴장했습니다: {guild.name} (ID: {guild.id})")
+    await update_server_count("lose")
 
 @tasks.loop(seconds=3)
 async def change_status():
