@@ -1276,9 +1276,15 @@ async def statistics(ctx):
             left_servers = await cursor.fetchone()
             left_servers_count = left_servers[0] if left_servers else 0
 
+    total_members = 0  # 총 유저 수 초기화
+
+    # 봇이 참여하고 있는 모든 서버를 반복
+    for guild in bot.guilds:
+        total_members += guild.member_count  # 각 서버의 멤버 수를 누적
+    
     embed = disnake.Embed(title="봇 통계", color=0x00ff00)
     embed.add_field(name="서버 통계", value=f'''현재 서버 수 : {len(bot.guilds)}개\n오늘 추가된 서버 : {new_servers_count}개\n오늘 삭제된 서버 : {left_servers_count}개''', inline=False)
-    embed.add_field(name="기타 통계", value=f'''현재 유저 수 : {sum(len(guild.members) for guild in bot.guilds)}명\n현재 채널 수 : {len([channel for channel in bot.get_all_channels()])}개''', inline=False)
+    embed.add_field(name="기타 통계", value=f'''현재 유저 수 : {total_members}명\n현재 채널 수 : {len([channel for channel in bot.get_all_channels()])}개''', inline=False)
     embed.add_field(name="명령어 통계", value=f"오늘 사용된 명령어 수 : {command_count_today}회", inline=False)
 
     if top_commands:
