@@ -909,6 +909,7 @@ async def play_song(ctx, channel_id, url_or_name):
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
         voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if e is None else print(f"Error: {e}"))
+        await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title}음악을 재생했습니다.")
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description='')
         if player.thumbnail:
             embed.set_image(url=player.thumbnail)
@@ -928,7 +929,6 @@ async def play_song(ctx, channel_id, url_or_name):
                 embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
         
         await send_control_buttons(ctx, embed)
-        await send_webhook_message("음악 재생", f"{ctx.author.id}님이 {player.title}을(를) 재생했습니다.")
 
     except Exception as e:
         await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
