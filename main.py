@@ -1735,54 +1735,48 @@ async def earn_money(ctx):
         await ctx.send(embed=embed, view=view)
 
 @bot.slash_command(name="출석체크", description="봇 투표 여부를 확인하고 돈을 지급합니다.")
-async def check_in(ctx):
-    await ctx.response.defer()
+async def recommend_reward(ctx):
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "출석체크", None)
+    if not await member_status(ctx):
+        return
 
-    user_id = ctx.author.id
+    # 한국디스코드리스트 API를 이용하여 추천 여부 확인
+    api_url = f"https://koreanbots.dev/api/v2/bots/{bot.user.id}/vote?userID={ctx.author.id}"
+    headers = {
+        "Authorization": f"{sec.koreanbots_api_key}",
+        "Content-Type": "application/json"
+    }
     
-    # 상대 경로 설정 (현재 작업 디렉토리 기준)
-    db_path = os.path.join('system_database', 'economy.db')
+    response = requests.get(api_url, headers=headers)
+    if response.status_code != 200:
+        await ctx.send("투표 정보를 가져오는 데 실패했습니다.")
+        return
 
-    async with aiosqlite.connect(db_path) as conn:
-        async with conn.cursor() as cursor:
-            # 사용자 출석 체크 상태 조회
-            await cursor.execute("SELECT checkin FROM user WHERE id = ?", (user_id,))
-            result = await cursor.fetchone()
-
-            if result is None:
-                # 사용자 정보가 없으면 신규 사용자로 추가
-                await cursor.execute("INSERT INTO user (id, checkin) VALUES (?, ?)", (user_id, 0))
-                await conn.commit()
-                check_status = 0  # 신규 사용자이므로 check_status를 0으로 설정
-            else:
-                check_status = int(result[0])  # 튜플에서 값 추출
-
-            if check_status == 0:
-                # 출석 체크하지 않은 상태
-                payment_amount = 200000  # 지급 금액
-                await addmoney(user_id, payment_amount)
-                await economy_log(ctx, "출석체크", "+", payment_amount)
-
-                # 출석 체크 상태 업데이트
-                await cursor.execute("UPDATE user SET checkin = 1 WHERE id = ?", (user_id,))
-                await conn.commit()
-
-                embed = disnake.Embed(title="✅ 출석 체크 완료", color=0x00FF00)
-                embed.add_field(name="금액 지급", value=f"{payment_amount:,}원이 지급되었습니다.")
-                await ctx.send(embed=embed)
-            else:
-                embed = disnake.Embed(title="❌ 출석 체크 실패", color=0xFF0000)
-                embed.add_field(name="오류", value="이미 출석 체크를 하였습니다.")
-                await ctx.send(embed=embed)
-                economy_log(ctx, "출석체크", "0", 0)
+    data = response.json().get("data", {})
+    if data.get("voted", False):
+        reward_amount = 200000  # 보상 금액 설정
+        await addmoney(ctx.author.id, reward_amount)
+        await economy_log(ctx, "출석체크", "+", reward_amount)
+        embed = disnake.Embed(color=embedsuccess)
+        embed.add_field(name="출석체크", value=f"{ctx.author.mention}, {reward_amount:,}원이 지급되었습니다.")
+    else:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="아직 투표를 하지 않으셨습니다.")
+        label = "투표하기"
+        url = f"https://koreanbots.dev/bots/{bot.user.id}/vote"
+        button = disnake.ui.Button(label=label, style=disnake.ButtonStyle.url, url=url)
+        view = disnake.ui.View()
+        view.add_item(button)
+        await ctx.send(embed=embed, view=view)
 
 @bot.slash_command(name="송금", description="다른사람에게 돈을 송금합니다.")
 async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는사람"), money: int = commands.Param(name="금액")):
+    if not await limit(ctx):
+        return
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):

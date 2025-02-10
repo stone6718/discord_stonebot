@@ -39,6 +39,12 @@ async def inspection(ctx):
     await ctx.send(embed=embed, ephemeral=True)
     return False
 
+async def limit(ctx):
+    embed = disnake.Embed(color=embederrorcolor)
+    embed.add_field(name="❌ 오류", value="해당 기능은 사용제한된 명령어입니다.\n개발자에게 문의해주세요.")
+    await ctx.send(embed=embed, ephemeral=True)
+    return False
+
 async def send_webhook_message(content):
     embed = disnake.Embed(title="스톤봇 로그", description=content, color=embedcolor)
     async with aiohttp.ClientSession() as session:
