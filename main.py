@@ -93,10 +93,10 @@ region_codes = {
     "울산광역시": "H10",
     "세종특별자치시": "I10",
     "경기도": "J10",
-    "강원도": "K10",
+    "강원특별자치도": "K10",
     "충청북도": "M10",
     "충청남도": "N10",
-    "전라북도": "P10",
+    "전북특별자치도": "P10",
     "전라남도": "Q10",
     "경상북도": "R10",
     "경상남도": "S10",
@@ -4841,21 +4841,25 @@ async def periodic_price_update():
 
 periodic_price_update.start()
 
-# 매일 09시에 출석 체크 상태를 초기화하는 작업
 @tasks.loop(seconds=1)  # 1초마다 실행
-async def reset_check_in_status():
+async def reset_database():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # KST로 현재 시각 가져오기
-    if now.hour == 0 and now.minute == 0 and now.second == 0:  # 09시 00분 00초에 실행
-        db_path = os.path.join('system_database', 'economy.db')
-        
-        async with aiosqlite.connect(db_path) as conn:
+    if now.hour == 0 and now.minute == 0 and now.second == 0:
+        db_path_economy = os.path.join('system_database', 'economy.db')
+        db_path_system = os.path.join('system_database', 'system.db')
+
+        async with aiosqlite.connect(db_path_economy) as conn: # 일일 체크인 초기화
             await conn.execute("UPDATE user SET checkin = 0")
+            await conn.commit()
+
+        async with aiosqlite.connect(db_path_system) as conn: # 일일 서버수 초기화
+            await conn.execute("UPDATE info SET new_server = 0, lose_server = 0")
             await conn.commit()
         
         print("모든 사용자의 체크인 상태가 초기화되었습니다.")
         await send_webhook_message("모든 사용자의 체크인 상태가 초기화되었습니다.")
 
-reset_check_in_status.start()
+reset_database.start()
 
 db_path = os.path.join('system_database', 'lotto.db')
 
