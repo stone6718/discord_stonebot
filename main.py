@@ -1014,7 +1014,11 @@ async def change_song_callback(interaction):
 
     try:
         msg = await bot.wait_for('message', check=check, timeout=30.0)
-        new_url_or_name = msg.content
+        new_url_or_name = msg.content.strip()
+
+        if not new_url_or_name:
+            raise ValueError("입력된 값이 비어 있습니다.")
+
         new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
 
         interaction.guild.voice_client.stop()
@@ -1024,13 +1028,50 @@ async def change_song_callback(interaction):
         await interaction.followup.send(embed=change_embed, ephemeral=True)
 
     except asyncio.TimeoutError:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="시간이 초과되었습니다. 다시 시도해주세요.")
+        embed = disnake.Embed(color=0xff0000, title="❌ 오류", description="시간이 초과되었습니다. 다시 시도해주세요.")
         await interaction.followup.send(embed=embed, ephemeral=True)
-    except IndexError:
-        embed = disnake.Embed(color=embederrorcolor)
-        embed.add_field(name="❌ 오류", value="오류: 리스트 인덱스가 범위를 벗어났습니다.")
+    except Exception as e:
+        embed = disnake.Embed(color=0xff0000, title="❌ 오류", description=str(e))
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+async def play_song(ctx, channel_id, url_or_name):
+    voice_client = voice_clients.get(channel_id)
+
+    if voice_client is None or not voice_client.is_connected():
+        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
+
+    try:
+        if not url_or_name:
+            raise ValueError("유효하지 않은 URL입니다.")
+
+        player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
+        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id, player)) if e is None else print(f"Error: {e}"))
+
+        await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
+
+        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
+        if player.thumbnail:
+            embed.set_image(url=player.thumbnail)
+
+        # 음악 길이와 현재 재생 분초 표시
+        duration = player.data.get('duration')
+        if duration:
+            days, remainder = divmod(duration, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            if days > 0:
+                embed.add_field(name="길이", value=f"{days}일 {hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+            elif hours > 0:
+                embed.add_field(name="길이", value=f"{hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+            else:
+                embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
+
+        await send_control_buttons(ctx, embed)
+
+    except Exception as e:
+        embed = disnake.Embed(color=0xff0000, title="오류", description=str(e))
+        await send_webhook_message(f'''{ctx.author.id}님이 {ctx.guild.id}에서 음악을 재생하는 중 "{e}"오류가 발생했습니다.''')
+        await ctx.send(embed=embed)
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -1745,6 +1786,19 @@ async def recommend_reward(ctx):
     if not await member_status(ctx):
         return
 
+    # 쿨타임 확인
+    cooldowns = load_cooldowns()
+    last_execution_time = cooldowns.get(f"recommend_reward_{ctx.author.id}", 0)
+    current_time = time.time()
+    cooldown_time = 12 * 60 * 60  # 12시간
+
+    if current_time - last_execution_time < cooldown_time:
+        remaining_time = round((cooldown_time - (current_time - last_execution_time)) / 3600, 2)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="쿨타임", value=f"{ctx.author.mention}, {remaining_time}시간 후에 다시 시도해주세요.")
+        await ctx.send(embed=embed)
+        return
+
     # 한국디스코드리스트 API를 이용하여 추천 여부 확인
     api_url = f"https://koreanbots.dev/api/v2/bots/{bot.user.id}/vote?userID={ctx.author.id}"
     headers = {
@@ -1764,6 +1818,11 @@ async def recommend_reward(ctx):
         await economy_log(ctx, "출석체크", "+", reward_amount)
         embed = disnake.Embed(color=embedsuccess)
         embed.add_field(name="출석체크", value=f"{ctx.author.mention}, {reward_amount:,}원이 지급되었습니다.")
+        await ctx.send(embed=embed)  # 메시지 전송
+
+        # 쿨타임 설정
+        cooldowns[f"recommend_reward_{ctx.author.id}"] = current_time
+        save_cooldowns(cooldowns)
     else:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="아직 투표를 하지 않으셨습니다.")
