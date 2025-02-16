@@ -3950,6 +3950,29 @@ async def timeout(ctx, user: disnake.Member = commands.Param(name="유저"), dur
         embed.add_field(name="❌ 오류", value="관리자만 실행 가능한 명령어입니다.")
         await ctx.send(embed=embed, ephemeral=True)
 
+@bot.slash_command(name="타임아웃해제", description="유저의 채팅 제한을 해제합니다. [관리자전용]")
+async def timeout_release(ctx, user: disnake.Member = commands.Param(name="유저"), reason: str = commands.Param(name="사유", default=None)):
+    if not await tos(ctx):
+        return
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "타임아웃해제", f"{user}, {reason}")
+    if ctx.author.guild_permissions.moderate_members:
+        try:
+            await user.timeout(duration=None, reason=reason)
+            embed = disnake.Embed(title="✅ 타임아웃 해제 완료", color=embedsuccess)
+            embed.add_field(name="대상", value=f"{user.mention}")
+            embed.add_field(name="사유", value=f"{reason}", inline=False)
+            await ctx.send(embed=embed)
+        except Exception as e:
+            embed = disnake.Embed(title="❌ 타임아웃 해제 실패", color=embederrorcolor)
+            embed.add_field(name="오류", value=str(e))
+            await ctx.send(embed=embed)
+    else:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="관리자만 실행 가능한 명령어입니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+
 @bot.slash_command(name="추방", description="유저를 추방합니다. [관리자전용]")
 async def kick(ctx, user: disnake.Member = commands.Param(name="유저"), reason: str = commands.Param(name="사유", default=None)):
     if not await tos(ctx):
