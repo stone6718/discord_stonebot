@@ -2476,6 +2476,9 @@ async def economy_join(ctx):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가입", None)
+    if ctx.guild is None:
+        await ctx.send("이 명령어는 서버에서만 사용할 수 있습니다.")
+        return
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (ctx.author.id,))
@@ -3847,8 +3850,10 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
     if ctx.author.guild_permissions.manage_messages:
         try:
             num = int(num)
-            if num <= 0:
-                raise ValueError("삭제할 메시지 수는 1 이상이어야 합니다.")
+            if num <= 0 or num > 100:
+                embed = disnake.Embed(color=embederrorcolor)
+                embed.add_field(name="❌ 오류", value="삭제할 메시지 수는 1 이상 100 이하이어야 합니다.")
+                await ctx.send(embed=embed)
             
             deleted_messages = await ctx.channel.purge(limit=num)
             await asyncio.sleep(3)
