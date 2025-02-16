@@ -3237,8 +3237,9 @@ async def coin_list(ctx):
     view = CoinView1(data)
 
     # 태스크가 이미 실행 중인지 확인
-    if not view_update2.is_running():
-        view_update2.start(view)  # 태스크 시작
+    if view_update2.is_running():
+        view_update2.cancel()  # 이미 실행 중이면 중지
+    view_update2.start(view)  # 태스크 시작
 
     embed = await view.create_embed()
     view.message = await ctx.send(embed=embed, view=view)
