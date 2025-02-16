@@ -3808,7 +3808,7 @@ async def bot_info(ctx):
 
     # 링크 버튼 추가
     support_button = Button(label="서포트 서버", url=sec.support_server_url, style=ButtonStyle.url)
-    docs_button = Button(label="하트 누르기", url="https://koreanbots.dev/bots/1202574228587810877/vote", style=ButtonStyle.url)  # 여기에 원하는 URL을 넣으세요.
+    docs_button = Button(label="하트 누르기", url=f"https://koreanbots.dev/bots/{bot.user.id}/vote", style=ButtonStyle.url)  # 여기에 원하는 URL을 넣으세요.
 
     view = disnake.ui.View()
     view.add_item(support_button)
