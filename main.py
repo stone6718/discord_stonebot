@@ -979,7 +979,7 @@ async def send_control_buttons(ctx, embed):
         disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
         disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_change"),
         disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
-        disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
+        #disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
     ]
 
     button_row = disnake.ui.View(timeout=None)
@@ -3921,7 +3921,7 @@ async def notification(ctx, content: str = commands.Param(name="내용")):
         await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="타임아웃", description="유저의 채팅을 제한합니다. [관리자전용]")
-async def timeout(ctx, user: disnake.Member = commands.Param(name="유저"), duration: int = commands.Param(name="시간(초)"), reason: str = commands.Param(name="사유", default=None)):
+async def timeout(ctx, user: disnake.Member = commands.Param(name="유저"), duration: int = commands.Param(name="시간_분"), reason: str = commands.Param(name="사유", default=None)):
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):
@@ -3929,10 +3929,16 @@ async def timeout(ctx, user: disnake.Member = commands.Param(name="유저"), dur
     await command_use_log(ctx, "타임아웃", f"{user}, {duration}, {reason}")
     if ctx.author.guild_permissions.moderate_members:
         try:
-            await user.timeout(duration=duration, reason=reason)
+            if duration > 10080:  # 7일을 분으로 환산
+                embed = disnake.Embed(title="❌ 타임아웃 실패", color=embederrorcolor)
+                embed.add_field(name="오류", value="타임아웃 시간은 최대 7일(10080분)까지 설정할 수 있습니다.")
+                await ctx.send(embed=embed)
+                return
+
+            await user.timeout(duration=duration*60, reason=reason)  # 분을 초로 변환
             embed = disnake.Embed(title="✅ 타임아웃 완료", color=embedsuccess)
             embed.add_field(name="대상", value=f"{user.mention}")
-            embed.add_field(name="시간", value=f"{duration}초")
+            embed.add_field(name="시간", value=f"{duration}분")
             embed.add_field(name="사유", value=f"{reason}", inline=False)
             await ctx.send(embed=embed)
         except Exception as e:
