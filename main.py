@@ -765,7 +765,7 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         self.title = data.get('title')
         self.url = data.get('url')
         self.thumbnail = data.get('thumbnail')
-        self.original = source  # self.original 설정
+        self.original = source  # Ensure original is set correctly
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
@@ -979,6 +979,7 @@ async def send_control_buttons(ctx, embed):
         disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
         disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_change"),
         disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
+        disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
     ]
 
     button_row = disnake.ui.View(timeout=None)
@@ -991,6 +992,7 @@ async def send_control_buttons(ctx, embed):
     button_row.children[1].callback = resume_callback
     button_row.children[2].callback = volume_change_callback
     button_row.children[3].callback = change_song_callback
+    button_row.children[4].callback = repeat_callback
 
 async def pause_callback(interaction):
     interaction.guild.voice_client.pause()
@@ -1001,38 +1003,22 @@ async def resume_callback(interaction):
         await interaction.response.send_message("음악이 다시 재생되었습니다.", ephemeral=True)
     else:
         await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
-        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
 
 async def volume_change_callback(interaction):
     await interaction.response.send_modal(VolumeChangeModal())
 
 async def change_song_callback(interaction):
-    await interaction.response.send_message("변경할 음악의 유튜브 링크 또는 음악 제목을 입력해주세요:", ephemeral=True)
+    await interaction.response.send_modal(MusicChangeModal())
 
-    def check(m):
-        return m.author == interaction.author and m.channel == interaction.channel
-
-    try:
-        msg = await bot.wait_for('message', check=check, timeout=30.0)
-        new_url_or_name = msg.content.strip()
-
-        if not new_url_or_name:
-            raise ValueError("입력된 값이 비어 있습니다.")
-
-        new_player = await YTDLSource.from_url(new_url_or_name, loop=bot.loop, stream=True)
-
-        interaction.guild.voice_client.stop()
-        interaction.guild.voice_client.play(new_player)
-
-        change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
-        await interaction.followup.send(embed=change_embed, ephemeral=True)
-
-    except asyncio.TimeoutError:
-        embed = disnake.Embed(color=0xff0000, title="❌ 오류", description="시간이 초과되었습니다. 다시 시도해주세요.")
-        await interaction.followup.send(embed=embed, ephemeral=True)
-    except Exception as e:
-        embed = disnake.Embed(color=0xff0000, title="❌ 오류", description=str(e))
-        await interaction.followup.send(embed=embed, ephemeral=True)
+async def repeat_callback(interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client.is_playing():
+        current_source = voice_client.source
+        voice_client.stop()
+        voice_client.play(current_source)
+        await interaction.response.send_message("음악이 반복 재생됩니다.", ephemeral=True)
+    else:
+        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
 
 async def play_song(ctx, channel_id, url_or_name):
     voice_client = voice_clients.get(channel_id)
@@ -2174,6 +2160,10 @@ async def baccarat(ctx):
     # 데이터 분리
     commands = [row[0] for row in results]
     counts = [row[1] for row in results]
+    total_counts = sum(counts)
+
+    # 퍼센트 계산
+    percentages = [(count / total_counts) * 100 for count in counts]
 
     # 그래프 그리기
     plt.figure(figsize=(12, 6))
@@ -2184,10 +2174,10 @@ async def baccarat(ctx):
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    # 바 위에 횟수 표시
-    for bar in bars:
+    # 바 위에 횟수와 퍼센트 표시
+    for bar, percentage in zip(bars, percentages):
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2, yval, int(yval), ha='center', va='bottom')
+        plt.text(bar.get_x() + bar.get_width()/2, yval, f'{int(yval)}\n({percentage:.2f}%)', ha='center', va='bottom')
 
     # 그래프 이미지 저장
     image_path = 'baccarat_analysis.png'
