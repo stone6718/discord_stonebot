@@ -909,7 +909,7 @@ async def play_song(ctx, channel_id, url_or_name, author):
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
         voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id, player)) if e is None else print(f"Error: {e}"))
-        send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
+        await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
         if player.thumbnail:
             embed.set_image(url=player.thumbnail)
@@ -940,9 +940,9 @@ async def play_next_song(ctx, channel_id, player=None):
         channel = bot.get_channel(ctx.channel.id)
         if channel:
             await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.")
-            embed = disnake.Embed(color=0x00ff00)
-            embed.add_field(name="음악 종료", value=f"음악이 종료되었습니다.")
-            await ctx.send(embed=embed)
+            embed = disnake.Embed(color=embedsuccess)
+            embed.add_field(name="음악 종료", value="다음 재생할 음악이 없어 음악이 종료되었습니다.")
+            return await channel.send(embed=embed)
         else:
             return
 
