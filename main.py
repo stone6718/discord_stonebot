@@ -4,7 +4,7 @@ import logging
 # 로깅 설정
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 import yt_dlp as youtube_dl
-import bs4, re, pytz, math, time, os, sqlite3, coolsms_kakao
+import bs4, re, pytz, math, time, os, coolsms_kakao
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
 import random, string, datetime, psutil, websocket, aiohttp, cpuinfo
 from gtts import gTTS
