@@ -1798,6 +1798,7 @@ async def recommend_reward(ctx):
         return
 
     data = response.json().get("data", {})
+    print(data)
     if data.get("voted", False):
         reward_amount = 200000  # 보상 금액 설정
         await addmoney(ctx.author.id, reward_amount)
@@ -2148,14 +2149,13 @@ async def baccarat(ctx):
         return
     db_path = os.path.join('system_database', 'log.db')
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    query = "SELECT winner, COUNT(*) as count FROM winner GROUP BY winner"
-    cursor.execute(query)
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.cursor() as cursor:
+            query = "SELECT winner, COUNT(*) as count FROM winner GROUP BY winner"
+            await cursor.execute(query)
 
-    # 결과 가져오기
-    results = cursor.fetchall()
+            # 결과 가져오기
+            results = await cursor.fetchall()
 
     # 데이터 분리
     commands = [row[0] for row in results]
