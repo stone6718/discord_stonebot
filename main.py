@@ -904,7 +904,9 @@ async def play_song(ctx, channel_id, url_or_name, author):
     voice_client = voice_clients.get(channel_id)
 
     if voice_client is None or not voice_client.is_connected():
-        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="음성 채널에 연결되어 있지 않습니다.")
+        return await ctx.send(embed=embed)
 
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
@@ -1050,26 +1052,31 @@ class VolumeChangeModal(disnake.ui.Modal):
             )
         ]
         super().__init__(title="음량 변경", components=components)
+        async def callback(self, ctx: disnake.ModalInteraction):
+            try:
+                change = int(ctx.text_values['volume_input'])
 
-    async def callback(self, ctx: disnake.ModalInteraction):
-        try:
-            change = int(ctx.text_values['volume_input'])
-
-            if not (1 <= change <= 100):
-                await ctx.send("음량은 1에서 100 사이의 값이어야 합니다.", ephemeral=True)
-                return
-            
-            # 1~100을 0.0~1.0으로 변환
-            new_volume = (change / 100)
-            if ctx.guild.voice_client and ctx.guild.voice_client.source:
-                ctx.guild.voice_client.source.volume = new_volume
-                embed = disnake.Embed(color=0x00ff00)
-                embed.add_field(name="음량 변경", value=f"현재 음량: {new_volume * 100:.0f}%")
+                if not (1 <= change <= 100):
+                    embed = disnake.Embed(color=0xff0000)
+                    embed.add_field(name="❌ 오류", value="음량은 1에서 100 사이의 값이어야 합니다.")
+                    await ctx.send(embed=embed, ephemeral=True)
+                    return
+                
+                # 1~100을 0.0~1.0으로 변환
+                new_volume = (change / 100)
+                if ctx.guild.voice_client and ctx.guild.voice_client.source:
+                    ctx.guild.voice_client.source.volume = new_volume
+                    embed = disnake.Embed(color=0x00ff00)
+                    embed.add_field(name="음량 변경", value=f"현재 음량: {new_volume * 100:.0f}%")
+                    await ctx.send(embed=embed, ephemeral=True)
+                else:
+                    embed = disnake.Embed(color=0xff0000)
+                    embed.add_field(name="❌ 오류", value="음성을 재생 중이지 않습니다.")
+                    await ctx.send(embed=embed, ephemeral=True)
+            except ValueError:
+                embed = disnake.Embed(color=0xff0000)
+                embed.add_field(name="❌ 오류", value="올바른 음량 값을 입력하세요.")
                 await ctx.send(embed=embed, ephemeral=True)
-            else:
-                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
-        except ValueError:
-            await ctx.send("올바른 음량 값을 입력하세요.", ephemeral=True)
 
 class MusicChangeModal(Modal):
     def __init__(self):
