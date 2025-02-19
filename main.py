@@ -880,7 +880,7 @@ async def play(ctx, url_or_name: str):
     if await is_playlist(url_or_name):
         await handle_playlist(ctx, url_or_name, channel_id)
     else:
-        await play_song(ctx, channel_id, url_or_name)
+        await play_song(ctx, channel_id, url_or_name, ctx.author)
 
 async def connect_voice_client(ctx, channel_id):
     if channel_id not in voice_clients or not voice_clients[channel_id].is_connected():
@@ -900,7 +900,7 @@ async def handle_playlist(ctx, url_or_name, channel_id):
     waiting_songs[channel_id].extend(songs)
     await play_next_song(ctx, channel_id)
 
-async def play_song(ctx, channel_id, url_or_name):
+async def play_song(ctx, channel_id, url_or_name, author):
     voice_client = voice_clients.get(channel_id)
 
     if voice_client is None or not voice_client.is_connected():
@@ -909,11 +909,10 @@ async def play_song(ctx, channel_id, url_or_name):
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
         voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id, player)) if e is None else print(f"Error: {e}"))
-        await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title}음악을 재생했습니다.")
-        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description='')
+        await send_webhook_message(f"{author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
+        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
         if player.thumbnail:
             embed.set_image(url=player.thumbnail)
-            embed.description = f"{player.title}"
         
         # 음악 길이와 현재 재생 분초 표시
         duration = player.data.get('duration')
@@ -922,11 +921,14 @@ async def play_song(ctx, channel_id, url_or_name):
             hours, remainder = divmod(remainder, 3600)
             minutes, seconds = divmod(remainder, 60)
             if days > 0:
-                embed.add_field(name="길이", value=f"{days}일 {hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+                length_str = f"{days}일 {hours:02d}:{minutes:02d}:{seconds:02d}"
             elif hours > 0:
-                embed.add_field(name="길이", value=f"{hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+                length_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             else:
-                embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
+                length_str = f"{minutes:02d}:{seconds:02d}"
+            embed.set_footer(text=f"재생한 사람: {author.display_name} | 길이: {length_str}")
+        else:
+            embed.set_footer(text=f"재생한 사람: {author.display_name}")
         
         await send_control_buttons(ctx, embed)
 
@@ -934,16 +936,18 @@ async def play_song(ctx, channel_id, url_or_name):
         await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
 
 async def play_next_song(ctx, channel_id, player=None):
-    if not waiting_songs[channel_id]:
+    # 대기 중인 곡이 없을 경우 처리
+    if not waiting_songs.get(channel_id):
         channel = bot.get_channel(ctx.channel.id)
         if channel:
             await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.")
-            return await channel.send("대기열이 비어 있습니다.")
         else:
             return
+    else:
+        next_song = waiting_songs[channel_id].pop(0)
 
     next_song = waiting_songs[channel_id].pop(0)
-    await play_song(ctx, channel_id, next_song)
+    await play_song(ctx, channel_id, next_song, ctx.author)
 
 @asynccontextmanager
 async def connect_db():
@@ -979,7 +983,7 @@ async def send_control_buttons(ctx, embed):
         disnake.ui.Button(label="다시 재생", style=disnake.ButtonStyle.green, custom_id="resume"),
         disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_change"),
         disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
-        #disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
+        disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
     ]
 
     button_row = disnake.ui.View(timeout=None)
@@ -996,13 +1000,20 @@ async def send_control_buttons(ctx, embed):
 
 async def pause_callback(interaction):
     interaction.guild.voice_client.pause()
-    await interaction.response.send_message("음악이 일시 정지되었습니다.", ephemeral=True)
+    embed = disnake.Embed(color=0x00ff00)
+    embed.add_field(name="일시 정지", value="음악이 일시 정지되었습니다.")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 async def resume_callback(interaction):
     if interaction.guild.voice_client.is_paused():
         interaction.guild.voice_client.resume()
-        await interaction.response.send_message("음악이 다시 재생되었습니다.", ephemeral=True)
+        embed = disnake.Embed(color=0x00ff00)
+        embed.add_field(name="다시 재생", value="음악이 다시 재생되었습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
+        embed = disnake.Embed(color=0xff0000)
+        embed.add_field(name="오류", value="현재 재생 중인 음악이 없습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def volume_change_callback(interaction):
     await interaction.response.send_modal(VolumeChangeModal())
@@ -1011,53 +1022,85 @@ async def change_song_callback(interaction):
     await interaction.response.send_modal(MusicChangeModal())
 
 async def repeat_callback(interaction):
-    voice_client = interaction.guild.voice_client
-    if voice_client.is_playing():
-        current_source = voice_client.source
-        voice_client.stop()
-        voice_client.play(current_source)
-        await interaction.response.send_message("음악이 반복 재생됩니다.", ephemeral=True)
+    if interaction.guild.voice_client and interaction.guild.voice_client.source:
+        current_song = interaction.guild.voice_client.source.data['url']
+        channel_id = interaction.guild.voice_client.channel.id
+        waiting_songs[channel_id].append(current_song)
+        embed = disnake.Embed(color=0x00ff00)
+        embed.add_field(name="반복", value="현재 재생 중인 곡이 대기열에 추가되었습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.response.send_message("현재 재생 중인 음악이 없습니다.", ephemeral=True)
+        embed = disnake.Embed(color=0xff0000)
+        embed.add_field(name="오류", value="현재 재생 중인 곡이 없습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-async def play_song(ctx, channel_id, url_or_name):
-    voice_client = voice_clients.get(channel_id)
+class VolumeChangeModal(disnake.ui.Modal):
+    def __init__(self):
+        components = [
+            disnake.ui.TextInput(
+                label="변경할 음량 (1~100)",
+                placeholder="음량을 입력하세요",
+                custom_id="volume_input",
+                style=TextInputStyle.short,
+                max_length=3
+            )
+        ]
+        super().__init__(title="음량 변경", components=components)
 
-    if voice_client is None or not voice_client.is_connected():
-        return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
+    async def callback(self, ctx: disnake.ModalInteraction):
+        try:
+            change = int(ctx.text_values['volume_input'])
 
-    try:
-        if not url_or_name:
-            raise ValueError("유효하지 않은 URL입니다.")
-
-        player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
-        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id, player)) if e is None else print(f"Error: {e}"))
-
-        await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
-
-        embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
-        if player.thumbnail:
-            embed.set_image(url=player.thumbnail)
-
-        # 음악 길이와 현재 재생 분초 표시
-        duration = player.data.get('duration')
-        if duration:
-            days, remainder = divmod(duration, 86400)
-            hours, remainder = divmod(remainder, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            if days > 0:
-                embed.add_field(name="길이", value=f"{days}일 {hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
-            elif hours > 0:
-                embed.add_field(name="길이", value=f"{hours:02d}:{minutes:02d}:{seconds:02d}", inline=False)
+            if not (1 <= change <= 100):
+                await ctx.send("음량은 1에서 100 사이의 값이어야 합니다.", ephemeral=True)
+                return
+            
+            # 1~100을 0.0~1.0으로 변환
+            new_volume = (change / 100)
+            if ctx.guild.voice_client and ctx.guild.voice_client.source:
+                ctx.guild.voice_client.source.volume = new_volume
+                embed = disnake.Embed(color=0x00ff00)
+                embed.add_field(name="음량 변경", value=f"현재 음량: {new_volume * 100:.0f}%")
+                await ctx.send(embed=embed, ephemeral=True)
             else:
-                embed.add_field(name="길이", value=f"{minutes:02d}:{seconds:02d}", inline=False)
+                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
+        except ValueError:
+            await ctx.send("올바른 음량 값을 입력하세요.", ephemeral=True)
 
-        await send_control_buttons(ctx, embed)
+class MusicChangeModal(Modal):
+    def __init__(self):
+        components = [
+            TextInput(
+                label="변경할 음악 제목이나 링크",
+                placeholder="제목이나 링크를 입력하세요",
+                custom_id="new_music_input",
+                style=TextInputStyle.short
+            )
+        ]
+        super().__init__(title="음악 변경", components=components)
 
-    except Exception as e:
-        embed = disnake.Embed(color=0xff0000, title="오류", description=str(e))
-        await send_webhook_message(f'''{ctx.author.id}님이 {ctx.guild.id}에서 음악을 재생하는 중 "{e}"오류가 발생했습니다.''')
-        await ctx.send(embed=embed)
+    async def callback(self, ctx: disnake.ModalInteraction):
+        try:
+            new_url_or_name = ctx.text_values['new_music_input']
+            # URL인지 확인하고, 그렇지 않으면 검색어로 처리
+            if not new_url_or_name.startswith("http"):
+                new_url_or_name = f"ytsearch:{new_url_or_name}"
+            
+            new_player = await YTDLSource.from_url(new_url_or_name, loop=asyncio.get_event_loop(), stream=True)
+
+            if ctx.guild.voice_client.source:
+                ctx.guild.voice_client.stop()
+                ctx.guild.voice_client.play(new_player)
+
+                change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
+                await ctx.response.edit_message(embed=change_embed)
+            else:
+                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
+        except Exception as e:
+            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            logging.error("음악 변경 중 오류가 발생했습니다.", exc_info=True)  # 오류 로그를 기록하여 문제를 확인할 수 있도록 합니다.
+            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            print(e)  # 오류 로그를 출력하여 문제를 확인할 수 있도록 합니다.
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
