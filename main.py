@@ -947,7 +947,7 @@ async def play_next_song(ctx, channel_id, player=None):
             return
 
     next_song = waiting_songs[channel_id].pop(0)
-    await play_song(ctx, channel_id, next_song)
+    await play_song(ctx, channel_id, next_song, ctx.author)
 
 @asynccontextmanager
 async def connect_db():
