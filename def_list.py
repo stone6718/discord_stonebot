@@ -726,9 +726,10 @@ async def removeuser_coin(user_id, _name, _count):
                 await aiocursor.execute("DELETE FROM user_coin WHERE id = ? AND coin_name = ?", (user_id, _name))
 
             await economy_aiodb.commit()
-
+    
     sell_price = coin_price * _count
-    await addmoney(user_id, sell_price)
+    net_sell_price = sell_price * (1 - 0.0005)  # 수수료 0.05%
+    await addmoney(user_id, net_sell_price)
 
 async def addstock(_name, _price):
     db_path = os.path.join('system_database', 'economy.db')
@@ -841,7 +842,8 @@ async def removeuser_stock(user_id, _name, _count):
             await economy_aiodb.commit()
 
     sell_price = stock_price * _count
-    await addmoney(user_id, sell_price)
+    net_sell_price = sell_price * (1 - 0.00015)  # 수수료 0.015%
+    await addmoney(user_id, net_sell_price)
 
 async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multiplier, lose_exp_divisor):
     random_number = random.randrange(1, 101)

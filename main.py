@@ -3275,7 +3275,8 @@ async def coin_list(ctx):
     # 태스크가 이미 실행 중인지 확인
     if view_update2.is_running():
         view_update2.cancel()  # 이미 실행 중이면 중지
-    view_update2.start(view)  # 태스크 시작
+    if not view_update2.is_running():
+        view_update2.start(view)  # 태스크 시작
 
     embed = await view.create_embed()
     view.message = await ctx.send(embed=embed, view=view)
@@ -3324,9 +3325,10 @@ class CoinView(disnake.ui.View):
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
                 total_value += coin_price * count
-                embed.add_field(name=name, value=f"가격: {coin_price:,} 원 | 보유 수량: {count:,}개", inline=False)
+                embed.add_field(name=name, value=f"가격(개당): {coin_price:,} 원 | 보유 수량: {count:,}개", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
+        embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
         return embed
 
 class PreviousButton(disnake.ui.Button):
@@ -3356,7 +3358,7 @@ async def coin_wallet(ctx):
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "가상화폐통장", None)
+    await command_use_log(ctx, "코인지갑", None)
     if not await member_status(ctx):
         return
     coins = await getuser_coin(ctx.author.id)
@@ -3364,7 +3366,7 @@ async def coin_wallet(ctx):
     # 사용자 이름 가져오기
     user_name = ctx.author.name
 
-    embed = disnake.Embed(title=f"{user_name}의 가상화폐통장 💰", color=0x00ff00)
+    embed = disnake.Embed(title=f"{user_name}의 코인지갑 💰", color=0x00ff00)
 
     if not coins:
         embed.add_field(name="❌ 오류", value="보유하고 있는 가상화폐가 없습니다.")
@@ -3383,7 +3385,7 @@ async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: 
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "가상화폐거래", f"{_name}, {choice}, {_count}")
+    await command_use_log(ctx, "코인거래", f"{_name}, {choice}, {_count}")
     if not await member_status(ctx):
         return
     
@@ -3418,7 +3420,11 @@ async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: 
             embed.add_field(name="가상화폐 이름", value=_name, inline=False)
             embed.add_field(name="판매 수량", value=f"{_count:,}개", inline=False)
             await add_exp(ctx.author.id, round((total_price * 0.5) / 1000))
+            fee = total_price * 0.0005  # 수수료 0.05%
+            net_total = total_price - fee
             embed.add_field(name="총 판매 가격", value=f"{total_price:,}원", inline=False)
+            embed.add_field(name="수수료 (0.05%)", value=f"{fee:,}원", inline=False)
+            embed.add_field(name="실제 수령 금액", value=f"{net_total:,}원", inline=False)
 
         await ctx.send(embed=embed)
     except ValueError as e:
@@ -3524,15 +3530,18 @@ class StockView(disnake.ui.View):
         embed = disnake.Embed(title="주식통장 💰", color=0x00ff00)
         start = self.current_page * self.per_page
         end = start + self.per_page
+        total_value = 0  # 총 가격 초기화
 
         for name, count in self.stocks[start:end]:
             stock_price = await get_stock_price(name)  # 주식 가격 가져오기
             if stock_price is None:
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
-                embed.add_field(name=name, value=f"가격: {stock_price:,} 원 | 보유 수량: {count:,}개", inline=False)
+                total_value += stock_price * count  # 총 가격 계산
+                embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
+        embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
 
         return embed
 
@@ -3634,7 +3643,11 @@ async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice:
             embed.add_field(name="주식 이름", value=_name, inline=False)
             embed.add_field(name="판매 수량", value=f"{_count:,}개", inline=False)
             await add_exp(ctx.author.id, round((total_price * 0.5) / 1000))
+            fee = total_price * 0.00015 # 수수료 0.015%
+            net_total = total_price - fee
             embed.add_field(name="총 판매 가격", value=f"{total_price:,}원", inline=False)
+            embed.add_field(name="수수료 (0.015%)", value=f"{fee:,}원", inline=False)
+            embed.add_field(name="실제 수령 금액", value=f"{net_total:,}원", inline=False)
 
         await ctx.send(embed=embed)
     except ValueError as e:
