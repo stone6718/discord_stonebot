@@ -2120,17 +2120,17 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1])) % 10
 
     # 플레이어 추가 카드 규칙 적용
-    if score_calculate_p <= 6:
+    if score_calculate_p < 6:
         mix_p.append(random_card())  # 새 카드 추가
         shape_p.append(random_shape())
         score_calculate_p = (get_card_value(mix_p[0]) + get_card_value(mix_p[1]) + get_card_value(mix_p[2])) % 10
 
     # 뱅커의 추가 카드 규칙 적용
     if score_calculate_b <= 2 or (
-        score_calculate_b == 3 and score_calculate_p != 8) or (
+        score_calculate_b == 3 and score_calculate_p not in [8, 9]) or (
         score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (
         score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (
-        score_calculate_b == 6 and score_calculate_p in [6, 7]):
+        score_calculate_b == 6 and score_calculate_p in [6, 7]) and score_calculate_b not in [8, 9]:
         mix_b.append(random_card())  # 새 카드 추가
         shape_b.append(random_shape())
         score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1]) + get_card_value(mix_b[2])) % 10
@@ -4958,8 +4958,8 @@ async def update_coin_prices():
     for coin in coins:
         name, price = coin
         new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
-        new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가
-        new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가
+        new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가 : 3억원
+        new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가 : 3백만원
         new_price = int(new_price)
         
         await aiocursor.execute("UPDATE coin SET price = ? WHERE coin_name = ?", (new_price, name))
@@ -4979,8 +4979,8 @@ async def update_stock_prices():
     for stock in stocks:
         name, price = stock
         new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
-        new_price = min(new_price, 5000000)  # 주식 가격 상한가
-        new_price = max(new_price, 5000)  # 주식 가격 하한가
+        new_price = min(new_price, 5000000)  # 주식 가격 상한가 : 5백만원
+        new_price = max(new_price, 50000)  # 주식 가격 하한가 : 5만원
         new_price = int(new_price)
         
         await aiocursor.execute("UPDATE stock SET price = ? WHERE stock_name = ?", (new_price, name))
