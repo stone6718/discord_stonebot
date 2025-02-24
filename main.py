@@ -835,9 +835,10 @@ class MusicChangeModal(Modal):
             else:
                 await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
         except Exception as e:
-            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            if not ctx.response.is_done():
+                await ctx.response.defer(ephemeral=True)
+            await ctx.edit_original_message(content="음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.")
             logging.error("음악 변경 중 오류가 발생했습니다.", exc_info=True)  # 오류 로그를 기록하여 문제를 확인할 수 있도록 합니다.
-            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
             print(e)  # 오류 로그를 출력하여 문제를 확인할 수 있도록 합니다.
 
 def cleanup(self):
