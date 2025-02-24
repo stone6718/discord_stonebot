@@ -2057,9 +2057,6 @@ async def betting_number(ctx, number: int = commands.Param(name="숫자"), money
 def get_card_value(card):
     shape_score = {
         'A': 1,
-        'J': 0,
-        'Q': 0,
-        'K': 0,
         '2': 2,
         '3': 3,
         '4': 4,
@@ -2068,7 +2065,10 @@ def get_card_value(card):
         '7': 7,
         '8': 8,
         '9': 9,
-        '10': 0
+        '10': 10,
+        'J': 10,
+        'Q': 10,
+        'K': 10
     }
     return shape_score.get(card, 0)
 
@@ -3030,7 +3030,7 @@ async def upgrade_item(ctx, weapon_name: str = commands.Param(name="아이템", 
         return await send_error_message(ctx, "캐시가 부족하여 강화할 수 없습니다.")
 
     # 버튼 생성
-    view = await create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost)
+    view = await create_upgrade_view(ctx, weapon_name, current_class, upgrade_cost, ctx.author.id)
 
     # 초기 메시지 전송
     embed = await create_upgrade_embed(weapon_name, current_class, upgrade_cost)
@@ -4869,6 +4869,48 @@ async def handle_dm_message(message):
     user = f"{message.author.display_name}({message.author.name})"
     avatar_url = message.author.avatar.url if message.author.avatar else None
 
+    db_path = os.path.join('system_database', 'economy.db')
+    async with aiosqlite.connect(db_path) as economy_aiodb:
+        async with economy_aiodb.cursor() as aiocursor:
+            await aiocursor.execute("SELECT dm_ask FROM user WHERE id=?", (message.author.id,))
+            dbdata = await aiocursor.fetchone()
+
+            if dbdata is None:
+                await aiocursor.execute("INSERT INTO user (id, dm_ask) VALUES (?, ?)", (message.author.id, 0))
+                await economy_aiodb.commit()
+                dm_ask = 0
+            else:
+                dm_ask = dbdata[0]
+
+            if dm_ask == 0:
+                await message.add_reaction("❓")
+                await message.channel.send("문의하시겠습니까?", view=InquiryConfirmView(message))
+            else:
+                await process_inquiry(message, user, avatar_url)
+
+class InquiryConfirmView(disnake.ui.View):
+    def __init__(self, message):
+        super().__init__(timeout=60)
+        self.message = message
+
+    @disnake.ui.button(label="예", style=disnake.ButtonStyle.green)
+    async def confirm(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        db_path = os.path.join('system_database', 'economy.db')
+        async with aiosqlite.connect(db_path) as economy_aiodb:
+            async with economy_aiodb.cursor() as aiocursor:
+                await aiocursor.execute("UPDATE user SET dm_ask = 1 WHERE id=?", (self.message.author.id,))
+                await economy_aiodb.commit()
+        
+        user = f"{self.message.author.display_name}({self.message.author.name})"
+        avatar_url = self.message.author.avatar.url if self.message.author.avatar else None
+        await process_inquiry(self.message, user, avatar_url)
+        await interaction.response.send_message("문의가 접수되었습니다.", ephemeral=True)
+
+    @disnake.ui.button(label="아니오", style=disnake.ButtonStyle.red)
+    async def cancel(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        await interaction.response.send_message("문의가 취소되었습니다.", ephemeral=True)
+
+async def process_inquiry(message, user, avatar_url):
     await message.add_reaction("✅")
     print("문의가 접수되었습니다.")
     await send_webhook_message("문의가 접수되었습니다.")
@@ -5088,16 +5130,9 @@ async def reset_database():
         db_path_economy = os.path.join('system_database', 'economy.db')
         db_path_system = os.path.join('system_database', 'system.db')
 
-        async with aiosqlite.connect(db_path_economy) as conn: # 일일 체크인 초기화
-            await conn.execute("UPDATE user SET checkin = 0")
-            await conn.commit()
-
         async with aiosqlite.connect(db_path_system) as conn: # 일일 서버수 초기화
             await conn.execute("UPDATE info SET new_server = 0, lose_server = 0")
             await conn.commit()
-        
-        print("모든 사용자의 체크인 상태가 초기화되었습니다.")
-        await send_webhook_message("모든 사용자의 체크인 상태가 초기화되었습니다.")
 
 reset_database.start()
 
@@ -5106,7 +5141,7 @@ db_path = os.path.join('system_database', 'lotto.db')
 @tasks.loop(seconds=1)  # 매 1초마다 체크
 async def lottery_draw():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 KST 시간 가져오기
-    if now.weekday() == 6 and now.hour == 11 and now.minute == 55 and now.second == 0:  # 매주 토요일 21시 0분 0초
+    if now.weekday() == 5 and now.hour == 21 and now.minute == 45 and now.second == 0:  # 매주 토요일 21시 0분 0초
         await draw_lottery()
 
 lottery_draw.start()
