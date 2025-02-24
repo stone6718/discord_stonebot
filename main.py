@@ -5349,8 +5349,6 @@ async def startup():
         db_path = os.path.join('system_database', 'economy.db')
         economy_aiodb = await aiosqlite.connect(db_path)
 
-aiodb, economy_aiodb = None
-
 async def shutdown():
     global aiodb, economy_aiodb
     for aiodb_instance in aiodb.values():
