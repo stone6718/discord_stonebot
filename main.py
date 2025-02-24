@@ -1,8 +1,5 @@
 import security as sec
 import logging
-
-# 로깅 설정
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 import yt_dlp as youtube_dl
 import bs4, re, pytz, math, time, os, coolsms_kakao
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
@@ -5351,11 +5348,14 @@ async def startup():
         db_path = os.path.join('system_database', 'economy.db')
         economy_aiodb = await aiosqlite.connect(db_path)
 
+aiodb, economy_aiodb = None
+
 async def shutdown():
-    global aiodb
+    global aiodb, economy_aiodb
     for aiodb_instance in aiodb.values():
         await aiodb_instance.close()
-    await economy_aiodb.close()
+    if economy_aiodb:
+        await economy_aiodb.close()
 
 try:
     asyncio.get_event_loop().run_until_complete(startup())
