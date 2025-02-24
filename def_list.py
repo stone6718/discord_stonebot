@@ -664,11 +664,12 @@ async def adduser_coin(user_id, _name, _count):
     # 사용자가 충분한 돈을 가지고 있는지 확인합니다.
     user_money = await getmoney(user_id)
     total_price = coin_price * _count
-    if user_money < total_price:
-        raise ValueError(f"돈이 부족합니다. 필요한 금액: {total_price}, 현재 잔액: {user_money}")
+    total_price_with_fee = total_price * 1.0005  # 수수료 0.05% 부과
+    if user_money < total_price_with_fee:
+        raise ValueError(f"돈이 부족합니다. 필요한 금액: {total_price_with_fee}, 현재 잔액: {user_money}")
 
     # 돈을 차감합니다.
-    await removemoney(user_id, total_price)
+    await removemoney(user_id, total_price_with_fee)
 
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:

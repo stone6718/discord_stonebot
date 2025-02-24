@@ -2120,7 +2120,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1])) % 10
 
     # 플레이어 추가 카드 규칙 적용
-    if score_calculate_p < 6:
+    if score_calculate_p < 6 and score_calculate_p not in [8, 9]:
         mix_p.append(random_card())  # 새 카드 추가
         shape_p.append(random_shape())
         score_calculate_p = (get_card_value(mix_p[0]) + get_card_value(mix_p[1]) + get_card_value(mix_p[2])) % 10
@@ -2131,9 +2131,10 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
         score_calculate_b == 4 and score_calculate_p in range(2, 8)) or (
         score_calculate_b == 5 and score_calculate_p in range(4, 8)) or (
         score_calculate_b == 6 and score_calculate_p in [6, 7]) and score_calculate_b not in [8, 9]:
-        mix_b.append(random_card())  # 새 카드 추가
-        shape_b.append(random_shape())
-        score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1]) + get_card_value(mix_b[2])) % 10
+        if score_calculate_b not in [8, 9]:
+            mix_b.append(random_card())  # 새 카드 추가
+            shape_b.append(random_shape())
+            score_calculate_b = (get_card_value(mix_b[0]) + get_card_value(mix_b[1]) + get_card_value(mix_b[2])) % 10
 
     # 승자 결정
     winner = "플레이어" if score_calculate_p > score_calculate_b else "뱅커" if score_calculate_p < score_calculate_b else "무승부"
@@ -2150,7 +2151,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
         print(f"데이터베이스 업데이트 중 오류 발생: {e}")
 
     # 배팅 결과 처리
-    embed = disnake.Embed(color=embedsuccess if winner == method else embederrorcolor)
+    embed = disnake.Embed(color=embedsuccess if winner == method else (0xffff00 if winner == "무승부" else embederrorcolor))
 
     if winner == method:  # win
         if winner == "플레이어":
@@ -2184,6 +2185,77 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     card_results = f"플레이어 : {', '.join([f'{mix_p[i]}{shape_p[i]}' for i in range(len(mix_p))])}, {score_calculate_p}\n"
     card_results += f"뱅커 : {', '.join([f'{mix_b[i]}{shape_b[i]}' for i in range(len(mix_b))])}, {score_calculate_b}"
     embed.add_field(name="카드 결과", value=card_results)
+    await ctx.send(embed=embed)
+
+@bot.slash_command(name="용호", description="보유중인 금액으로 용호를 합니다.")
+async def dragon_tiger(ctx, money: int = commands.Param(name="금액"), method: str = commands.Param(name="배팅", choices=["용", "호", "무승부"])):
+    if not await tos(ctx):
+        return
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "용호", f"{money}")
+    if not await member_status(ctx):
+        return
+    user = ctx.author
+    if money <= 0:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="배팅 금액은 1원 이상이어야 합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    if money > await getmoney(user.id):
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="가지고 있는 돈보다 배팅 금액이 많습니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    # 카드 랜덤 생성 함수
+    def random_card():
+        return random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
+
+    def random_shape():
+        return random.choice(['♠️', '♣️', '♥️', '♦️'])
+
+    # 카드 뽑기
+    dragon_card = random_card()
+    tiger_card = random_card()
+
+    dragon_value = get_card_value(dragon_card)
+    tiger_value = get_card_value(tiger_card)
+
+    result = None
+    if dragon_value > tiger_value:
+        result = "용"
+    elif tiger_value > dragon_value:
+        result = "호"
+    else:
+        result = "무승부"
+
+    embed = disnake.Embed(title="용호 결과", color=0x00ff00)
+    embed.add_field(name="용 카드", value=f"{dragon_card} (값: {dragon_value})", inline=True)
+    embed.add_field(name="호 카드", value=f"{tiger_card} (값: {tiger_value})", inline=True)
+    embed.add_field(name="결과", value=f"{result}", inline=False)
+
+    if result == method:
+        if result == "무승부":
+            win_amount = money * 11
+        else:
+            win_amount = money * 2
+        await addmoney(user.id, win_amount)
+        await add_exp(user.id, round(win_amount / 600))
+        embed.add_field(name="성공", value=f"{win_amount:,}원을 얻었습니다.", inline=False)
+        await economy_log(ctx, "용호", "+", win_amount)
+    elif result == "무승부":
+        embed.color = 0xffff00  # 노란색
+        embed.add_field(name="무승부", value="배팅 금액이 유지됩니다.", inline=False)
+    else:
+        embed.color = 0xff0000  # 빨간색
+        await removemoney(user.id, money)
+        await add_lose_money(user.id, money)
+        await add_exp(user.id, round(money / 1200))
+        embed.add_field(name="실패", value=f"{money:,}원을 잃었습니다.", inline=False)
+        await economy_log(ctx, "용호", "-", money)
+
     await ctx.send(embed=embed)
 
 @bot.slash_command(name="바카라_분석", description="분석 데이터를 그래프로 보여줍니다.")
@@ -3412,7 +3484,11 @@ async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: 
             embed.add_field(name="가상화폐 이름", value=_name, inline=False)
             embed.add_field(name="구매 수량", value=f"{_count:,}개", inline=False)
             await add_exp(ctx.author.id, round((total_price * 0.5) / 1000))
+            fee = total_price * 0.0005  # 수수료 0.05%
+            net_total = total_price + round(fee)
             embed.add_field(name="총 구매 가격", value=f"{total_price:,}원", inline=False)
+            embed.add_field(name="수수료 (0.05%)", value=f"{round(fee):,}원", inline=False)
+            embed.add_field(name="실제 지불 금액", value=f"{round(net_total):,}원", inline=False)
 
         elif choice == "판매":
             await removeuser_coin(ctx.author.id, _name, _count)
@@ -3421,10 +3497,10 @@ async def coin_trading(ctx, _name: str = commands.Param(name="이름"), choice: 
             embed.add_field(name="판매 수량", value=f"{_count:,}개", inline=False)
             await add_exp(ctx.author.id, round((total_price * 0.5) / 1000))
             fee = total_price * 0.0005  # 수수료 0.05%
-            net_total = total_price - fee
+            net_total = total_price - round(fee)
             embed.add_field(name="총 판매 가격", value=f"{total_price:,}원", inline=False)
-            embed.add_field(name="수수료 (0.05%)", value=f"{fee:,}원", inline=False)
-            embed.add_field(name="실제 수령 금액", value=f"{net_total:,}원", inline=False)
+            embed.add_field(name="수수료 (0.05%)", value=f"{round(fee):,}원", inline=False)
+            embed.add_field(name="실제 수령 금액", value=f"{round(net_total):,}원", inline=False)
 
         await ctx.send(embed=embed)
     except ValueError as e:
@@ -3644,10 +3720,10 @@ async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice:
             embed.add_field(name="판매 수량", value=f"{_count:,}개", inline=False)
             await add_exp(ctx.author.id, round((total_price * 0.5) / 1000))
             fee = total_price * 0.00015 # 수수료 0.015%
-            net_total = total_price - fee
+            net_total = total_price - round(fee)
             embed.add_field(name="총 판매 가격", value=f"{total_price:,}원", inline=False)
-            embed.add_field(name="수수료 (0.015%)", value=f"{fee:,}원", inline=False)
-            embed.add_field(name="실제 수령 금액", value=f"{net_total:,}원", inline=False)
+            embed.add_field(name="수수료 (0.015%)", value=f"{round(fee):,}원", inline=False)
+            embed.add_field(name="실제 수령 금액", value=f"{round(net_total):,}원", inline=False)
 
         await ctx.send(embed=embed)
     except ValueError as e:
