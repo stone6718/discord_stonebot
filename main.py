@@ -2256,6 +2256,121 @@ async def dragon_tiger(ctx, money: int = commands.Param(name="금액"), method: 
 
     await ctx.send(embed=embed)
 
+@bot.slash_command(name="블랙잭", description="보유중인 금액으로 블랙잭를 합니다.")
+async def blackjack(ctx, money: int = commands.Param(name="금액")):
+    if not await tos(ctx):
+        return
+    if not await check_permissions(ctx):
+        return
+    await command_use_log(ctx, "블랙잭", f"{money}")
+    if not await member_status(ctx):
+        return
+    user = ctx.author
+    if money <= 0:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="배팅 금액은 1원 이상이어야 합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    if money > await getmoney(user.id):
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="가지고 있는 돈보다 배팅 금액이 많습니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    # 카드 랜덤 생성 함수
+    def random_card():
+        return random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
+
+    def random_shape():
+        return random.choice(['♠️', '♣️', '♥️', '♦️'])
+
+    # 카드 점수 계산 함수
+    def calculate_score(cards):
+        score = sum([get_card_value(card) for card in cards])
+        if 'A' in cards and score + 10 <= 21:
+            score += 10
+        return score
+
+    # 초기 카드 뽑기
+    user_cards = [random_card() for _ in range(2)]
+    dealer_cards = [random_card() for _ in range(2)]
+
+    user_score = calculate_score(user_cards)
+    dealer_score = calculate_score(dealer_cards)
+
+    # 초기 메시지 임베드 생성
+    embed = disnake.Embed(title="블랙잭 게임", description="", color=0x00ff00)
+    embed.add_field(name="당신의 카드", value=f"{', '.join(user_cards)} (점수: {user_score})", inline=False)
+    embed.add_field(name="딜러의 카드", value=f"{dealer_cards[0]}, ? (점수: ?)", inline=False)
+
+    # 버튼 생성
+    hit_button = disnake.ui.Button(label="히트", style=disnake.ButtonStyle.primary)
+    stand_button = disnake.ui.Button(label="스탠드", style=disnake.ButtonStyle.secondary)
+
+    # 버튼 뷰 생성
+    view = disnake.ui.View(timeout=None)
+    view.add_item(hit_button)
+    view.add_item(stand_button)
+
+    # 메시지 전송
+    message = await ctx.send(embed=embed, view=view)
+
+    async def hit_callback(interaction):
+        nonlocal user_cards, user_score, dealer_cards, dealer_score
+
+        user_cards.append(random_card())
+        user_score = calculate_score(user_cards)
+
+        if user_score > 21:
+            embed = disnake.Embed(title="블랙잭 게임", description="당신이 졌습니다! (버스트)", color=0xff0000)
+            embed.add_field(name="당신의 카드", value=f"{', '.join(user_cards)} (점수: {user_score})", inline=False)
+            embed.add_field(name="딜러의 카드", value=f"{', '.join(dealer_cards)} (점수: {dealer_score})", inline=False)
+            await interaction.response.edit_message(embed=embed, view=None)
+            await removemoney(user.id, money)
+            await add_lose_money(user.id, money)
+            await add_exp(user.id, round(money / 1200))
+            await economy_log(ctx, "블랙잭", "-", money)
+        else:
+            embed = disnake.Embed(title="블랙잭 게임", description="", color=0x00ff00)
+            embed.add_field(name="당신의 카드", value=f"{', '.join(user_cards)} (점수: {user_score})", inline=False)
+            embed.add_field(name="딜러의 카드", value=f"{dealer_cards[0]}, ? (점수: ?)", inline=False)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+    async def stand_callback(interaction):
+        nonlocal user_cards, user_score, dealer_cards, dealer_score
+
+        while dealer_score < 17:
+            dealer_cards.append(random_card())
+            dealer_score = calculate_score(dealer_cards)
+
+        if dealer_score > 21 or user_score > dealer_score:
+            result = "당신이 이겼습니다!"
+            color = 0x00ff00
+            await addmoney(user.id, money)
+            await add_exp(user.id, round(money / 600))
+            await economy_log(ctx, "블랙잭", "+", money)
+        elif user_score < dealer_score:
+            result = "당신이 졌습니다!"
+            color = 0xff0000
+            await removemoney(user.id, money)
+            await add_lose_money(user.id, money)
+            await add_exp(user.id, round(money / 1200))
+            await economy_log(ctx, "블랙잭", "-", money)
+        else:
+            result = "비겼습니다!"
+            color = 0xffff00
+            await economy_log(ctx, "블랙잭", "0", 0)
+
+        embed = disnake.Embed(title="블랙잭 게임", description=result, color=color)
+        embed.add_field(name="당신의 카드", value=f"{', '.join(user_cards)} (점수: {user_score})", inline=False)
+        embed.add_field(name="딜러의 카드", value=f"{', '.join(dealer_cards)} (점수: {dealer_score})", inline=False)
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    # 버튼 콜백 설정
+    hit_button.callback = hit_callback
+    stand_button.callback = stand_callback
+
 @bot.slash_command(name="바카라_분석", description="분석 데이터를 그래프로 보여줍니다.")
 async def baccarat(ctx):
     if not await tos(ctx):
