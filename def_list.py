@@ -675,16 +675,17 @@ async def adduser_coin(user_id, _name, _count):
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
             # 사용자가 보유한 동일한 가상화폐가 있는지 확인
-            await aiocursor.execute("SELECT count FROM user_coin WHERE id = ? AND coin_name = ?", (user_id, _name))
+            await aiocursor.execute("SELECT count, buy_price FROM user_coin WHERE id = ? AND coin_name = ?", (user_id, _name))
             existing_coin = await aiocursor.fetchone()
 
             if existing_coin:
-                # 가상화폐가 존재하면 개수를 업데이트
+                # 가상화폐가 존재하면 개수와 구매가를 업데이트
                 new_count = existing_coin[0] + _count
-                await aiocursor.execute("UPDATE user_coin SET count = ? WHERE id = ? AND coin_name = ?", (new_count, user_id, _name))
+                new_buy_price = ((existing_coin[0] * existing_coin[1]) + total_price) / new_count
+                await aiocursor.execute("UPDATE user_coin SET count = ?, buy_price = ? WHERE id = ? AND coin_name = ?", (new_count, new_buy_price, user_id, _name))
             else:
-                # 가상화폐가 존재하지 않으면 새로운 주식 추가
-                await aiocursor.execute("INSERT INTO user_coin (id, coin_name, count) VALUES (?, ?, ?)", (user_id, _name, _count))
+                # 가상화폐가 존재하지 않으면 새로운 가상화폐 추가
+                await aiocursor.execute("INSERT INTO user_coin (id, coin_name, count, buy_price) VALUES (?, ?, ?, ?)", (user_id, _name, _count, coin_price))
 
             await economy_aiodb.commit()
 
@@ -789,16 +790,17 @@ async def adduser_stock(user_id, _name, _count):
     async with aiosqlite.connect(db_path) as economy_aiodb:
         async with economy_aiodb.cursor() as aiocursor:
             # 사용자가 보유한 동일한 주식이 있는지 확인
-            await aiocursor.execute("SELECT count FROM user_stock WHERE id = ? AND stock_name = ?", (user_id, _name))
+            await aiocursor.execute("SELECT count, buy_price FROM user_stock WHERE id = ? AND stock_name = ?", (user_id, _name))
             existing_stock = await aiocursor.fetchone()
 
             if existing_stock:
-                # 주식이 존재하면 개수를 업데이트
+                # 주식이 존재하면 개수와 구매가를 업데이트
                 new_count = existing_stock[0] + _count
-                await aiocursor.execute("UPDATE user_stock SET count = ? WHERE id = ? AND stock_name = ?", (new_count, user_id, _name))
+                new_buy_price = ((existing_stock[0] * existing_stock[1]) + total_price) / new_count
+                await aiocursor.execute("UPDATE user_stock SET count = ?, buy_price = ? WHERE id = ? AND stock_name = ?", (new_count, new_buy_price, user_id, _name))
             else:
                 # 주식이 존재하지 않으면 새로운 주식 추가
-                await aiocursor.execute("INSERT INTO user_stock (id, stock_name, count) VALUES (?, ?, ?)", (user_id, _name, _count))
+                await aiocursor.execute("INSERT INTO user_stock (id, stock_name, count, buy_price) VALUES (?, ?, ?, ?)", (user_id, _name, _count, stock_price))
 
             await economy_aiodb.commit()
 

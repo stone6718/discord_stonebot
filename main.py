@@ -3507,13 +3507,14 @@ class CoinView(disnake.ui.View):
         end = start + self.per_page
         total_value = 0  
 
-        for name, count in self.coins[start:end]:
+        for name, count, buy_price in self.coins[start:end]:
             coin_price = next((price for coin_name, price in await getcoin() if coin_name == name), None)
             if coin_price is None:
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
                 total_value += coin_price * count
-                embed.add_field(name=name, value=f"가격(개당): {coin_price:,} 원 | 보유 수량: {count:,}개", inline=False)
+                profit_percentage = ((coin_price - buy_price) / buy_price) * 100
+                embed.add_field(name=name, value=f"가격(개당): {coin_price:,} 원 | 보유 수량: {count:,}개 | 수익률: {profit_percentage:.2f}%", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
         embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
@@ -3724,13 +3725,14 @@ class StockView(disnake.ui.View):
         end = start + self.per_page
         total_value = 0  # 총 가격 초기화
 
-        for name, count in self.stocks[start:end]:
+        for name, count, buy_price in self.stocks[start:end]:
             stock_price = await get_stock_price(name)  # 주식 가격 가져오기
             if stock_price is None:
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
                 total_value += stock_price * count  # 총 가격 계산
-                embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주", inline=False)
+                profit_percentage = ((stock_price - buy_price) / buy_price) * 100
+                embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주 | 수익률: {profit_percentage:.2f}%", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
         embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
@@ -5001,6 +5003,10 @@ async def handle_dm_message(message):
             if dm_ask == 0:
                 await message.add_reaction("❓")
                 await message.channel.send("문의하시겠습니까?", view=InquiryConfirmView(message))
+            elif message.content.strip() == "!종료":
+                await aiocursor.execute("UPDATE user SET dm_ask = 0 WHERE id=?", (message.author.id,))
+                await economy_aiodb.commit()
+                await message.channel.send("문의가 종료되었습니다.")
             else:
                 await process_inquiry(message, user, avatar_url)
 
@@ -5053,6 +5059,20 @@ async def process_inquiry(message, user, avatar_url):
     # 버튼을 포함하는 뷰 생성
     view = View(timeout=None)
     view.add_item(reply_button)
+    # 문의 종료 버튼 생성
+    end_inquiry_button = Button(label="문의 종료", style=disnake.ButtonStyle.red)
+
+    async def end_inquiry_callback(interaction):
+        db_path = os.path.join('system_database', 'economy.db')
+        async with aiosqlite.connect(db_path) as economy_aiodb:
+            async with economy_aiodb.cursor() as aiocursor:
+                await aiocursor.execute("UPDATE user SET dm_ask = 0 WHERE id=?", (message.author.id,))
+                await economy_aiodb.commit()
+        await interaction.response.send_message("문의가 종료되었습니다.", ephemeral=True)
+
+    end_inquiry_button.callback = end_inquiry_callback
+
+    view.add_item(end_inquiry_button)
 
     # 특정 채널로 전송
     await send_to_support_channel(dm_embed, view)
