@@ -2347,9 +2347,11 @@ async def blackjack(ctx, money: int = commands.Param(name="금액")):
         if dealer_score > 21 or user_score > dealer_score:
             result = "당신이 이겼습니다!"
             color = 0x00ff00
-            await addmoney(user.id, money)
-            await add_exp(user.id, round(money / 600))
-            await economy_log(ctx, "블랙잭", "+", money)
+            win_amount = money * 2
+            await addmoney(user.id, win_amount)
+            await add_exp(user.id, round(win_amount / 600))
+            await economy_log(ctx, "블랙잭", "+", win_amount)
+            result += f" {win_amount:,}원을 벌었습니다."
         elif user_score < dealer_score:
             result = "당신이 졌습니다!"
             color = 0xff0000
@@ -2357,6 +2359,7 @@ async def blackjack(ctx, money: int = commands.Param(name="금액")):
             await add_lose_money(user.id, money)
             await add_exp(user.id, round(money / 1200))
             await economy_log(ctx, "블랙잭", "-", money)
+            result += f" {money:,}원을 잃었습니다."
         else:
             result = "비겼습니다!"
             color = 0xffff00
