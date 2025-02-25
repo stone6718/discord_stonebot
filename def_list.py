@@ -693,7 +693,7 @@ async def getuser_coin(user_id):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT coin_name, count FROM user_coin WHERE id=?", (user_id,))
+    await aiocursor.execute("SELECT coin_name, count, buy_price FROM user_coin WHERE id=?", (user_id,))
     data = await aiocursor.fetchall()
     await aiocursor.close()
     return data
@@ -808,7 +808,7 @@ async def getuser_stock(user_id):
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
-    await aiocursor.execute("SELECT stock_name, count FROM user_stock WHERE id=?", (user_id,))
+    await aiocursor.execute("SELECT stock_name, count, buy_price FROM user_stock WHERE id=?", (user_id,))
     data = await aiocursor.fetchall()
     await aiocursor.close()
     return data

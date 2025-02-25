@@ -886,7 +886,8 @@ async def connect_voice_client(ctx, channel_id):
             voice_client = await ctx.author.voice.channel.connect()
             voice_clients[channel_id] = voice_client
         except disnake.ClientException:
-            voice_client = voice_clients[channel_id]
+            voice_client = ctx.guild.voice_client
+            voice_clients[channel_id] = voice_client
     return voice_clients[channel_id]
 
 async def handle_playlist(ctx, url_or_name, channel_id):
@@ -906,7 +907,7 @@ async def play_song(ctx, channel_id, url_or_name, author):
 
     try:
         player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
-        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id, player)) if e is None else print(f"Error: {e}"))
+        voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if e is None else print(f"Error: {e}"))
         await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
         if player.thumbnail:
@@ -2184,6 +2185,7 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
     card_results += f"뱅커 : {', '.join([f'{mix_b[i]}{shape_b[i]}' for i in range(len(mix_b))])}, {score_calculate_b}"
     embed.add_field(name="카드 결과", value=card_results)
     await ctx.send(embed=embed)
+    return
 
 @bot.slash_command(name="용호", description="보유중인 금액으로 용호를 합니다.")
 async def dragon_tiger(ctx, money: int = commands.Param(name="금액"), method: str = commands.Param(name="배팅", choices=["용", "호", "무승부"])):
@@ -3476,9 +3478,10 @@ async def view_update2(view: CoinView1):
         await view.update_message(view.last_interaction)
 
 class CoinView(disnake.ui.View):
-    def __init__(self, coins, per_page=5):
+    def __init__(self, coins, coin_prices, per_page=5):
         super().__init__(timeout=None)
         self.coins = coins
+        self.coin_prices = coin_prices
         self.per_page = per_page
         self.current_page = 0
         self.max_page = (len(coins) - 1) // per_page
@@ -3507,14 +3510,18 @@ class CoinView(disnake.ui.View):
         end = start + self.per_page
         total_value = 0  
 
-        for name, count, buy_price in self.coins[start:end]:
-            coin_price = next((price for coin_name, price in await getcoin() if coin_name == name), None)
-            if coin_price is None:
-                embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
+        for coin in self.coins[start:end]:
+            if len(coin) == 3:
+                name, count, buy_price = coin
+                coin_price = self.coin_prices.get(name)
+                if coin_price is None:
+                    embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
+                else:
+                    total_value += coin_price * count
+                    profit_percentage = ((coin_price - buy_price) / buy_price) * 100
+                    embed.add_field(name=name, value=f"가격(개당): {coin_price:,} 원 | 보유 수량: {count:,}개 | 수익률: {profit_percentage:.2f}%", inline=False)
             else:
-                total_value += coin_price * count
-                profit_percentage = ((coin_price - buy_price) / buy_price) * 100
-                embed.add_field(name=name, value=f"가격(개당): {coin_price:,} 원 | 보유 수량: {count:,}개 | 수익률: {profit_percentage:.2f}%", inline=False)
+                embed.add_field(name="데이터 오류", value="가상화폐 데이터가 올바르지 않습니다.", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
         embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
@@ -3551,6 +3558,7 @@ async def coin_wallet(ctx):
     if not await member_status(ctx):
         return
     coins = await getuser_coin(ctx.author.id)
+    coin_prices = {name: price for name, price in await getcoin()}
 
     # 사용자 이름 가져오기
     user_name = ctx.author.name
@@ -3562,7 +3570,7 @@ async def coin_wallet(ctx):
         await ctx.send(embed=embed)
     else:
         # 가상화폐 정보를 담고 있는 CoinView 생성
-        view = CoinView(coins)
+        view = CoinView(coins, coin_prices)
 
         # 초기 임베드 생성 및 메시지 전송
         view.message = await ctx.send(embed=await view.create_embed(), view=view)
@@ -3731,8 +3739,11 @@ class StockView(disnake.ui.View):
                 embed.add_field(name=name, value=f"{count}개 (현재 가격 정보를 가져오지 못했습니다.)", inline=False)
             else:
                 total_value += stock_price * count  # 총 가격 계산
-                profit_percentage = ((stock_price - buy_price) / buy_price) * 100
-                embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주 | 수익률: {profit_percentage:.2f}%", inline=False)
+                if buy_price != 0:
+                    profit_percentage = ((stock_price - buy_price) / buy_price) * 100
+                    embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주 | 수익률: {profit_percentage:.2f}%", inline=False)
+                else:
+                    embed.add_field(name=name, value=f"가격(주당): {stock_price:,} 원 | 보유 수량: {count:,}주 | 수익률: 계산 불가 (구매 가격이 0입니다)", inline=False)
 
         embed.add_field(name="", value=f"📄 페이지 {self.current_page + 1}/{self.max_page + 1}", inline=False)
         embed.add_field(name="총 가격", value=f"{total_value:,} 원", inline=False)  # 총 가격 필드 추가
@@ -3761,15 +3772,6 @@ async def get_stock_price(stock_name):
     stock_price = await get_stock_data(stock_symbol)  # 비동기 호출로 변경
     
     return stock_price  # 주식 가격 반환
-
-async def getuser_stock(user_id):
-    # 사용자 ID로 주식 정보를 가져오는 쿼리 실행
-    db_path = os.path.join('system_database', 'economy.db')
-    async with aiosqlite.connect(db_path) as conn:
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT stock_name, count FROM user_stock WHERE id = ?", (user_id,))
-            stocks = await cursor.fetchall()
-            return stocks if stocks else None  # 주식이 없으면 None 반환
 
 @bot.slash_command(name="주식통장", description="보유중인 주식을 확인합니다.")
 async def stock_wallet(ctx):
@@ -4108,7 +4110,8 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
             deleted_messages = await ctx.channel.purge(limit=num)
             await asyncio.sleep(3)
             embed = disnake.Embed(color=embedsuccess)
-            embed.add_field(name=f"{len(deleted_messages)}개의 메시지를 지웠습니다.", value="")
+            await ctx.send(embed=embed)  # 응답 전송
+            return
             await ctx.send(embed=embed)  # 응답 전송
         except ValueError as ve:
             embed = disnake.Embed(color=embederrorcolor)
