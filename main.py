@@ -1686,7 +1686,7 @@ async def email_verify(ctx, email: str):
     await ctx.response.send_modal(modal=verify_Modal_EMAIL())
 
 @bot.slash_command(name="지갑", description="자신이나 다른 유저의 지갑을 조회합니다.")
-async def wallet(ctx, member_id: int = None):
+async def wallet(ctx, member_id: str = None):
     if not await check_permissions(ctx):
         return
 
