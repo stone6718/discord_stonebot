@@ -2946,6 +2946,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
             embed = disnake.Embed(title="✅ 전투 성공", description="", color=0x00ff00)
             embed.add_field(name="", value=f"{monster_name}을(를) 처치했습니다! 보상으로 {reward}을(를) 받았습니다.")
             await interaction.message.edit(embed=embed, view=None)  # 버튼 제거
+            return  # 전투 종료 후 함수 종료
 
     async def end_battle_callback(interaction):
         await interaction.response.defer()  # 응답 지연
