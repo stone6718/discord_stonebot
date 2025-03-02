@@ -2428,7 +2428,7 @@ async def baccarat(ctx):
     conn.close()
 
 @bot.slash_command(name="로또구매", description="로또를 구매합니다.")
-async def purchase_lottery(ctx, auto: str = commands.Param(name="종류", choices=["자동", "수동"], default="자동"),
+async def purchase_lotto(ctx, auto: str = commands.Param(name="종류", choices=["자동", "수동"], default="자동"),
                            count: int = commands.Param(name="개수", default=1),
                            numbers: str = commands.Param(name="번호", default=None)):
     if not await tos(ctx):
@@ -2460,7 +2460,7 @@ async def purchase_lottery(ctx, auto: str = commands.Param(name="종류", choice
     await ctx.response.defer()  # 응답을 미리 지연
 
     # 데이터베이스 파일 경로
-    db_path = os.path.join('system_database', 'lotto.db')
+    db_path = os.path.join('system_database', 'system.db')
     purchased_numbers = []  # 구매한 로또 번호를 저장할 리스트
     # 텍스트 파일 경로
     text_file_path = os.path.join('system_database', 'purchased_lotteries.txt')
@@ -2468,10 +2468,10 @@ async def purchase_lottery(ctx, auto: str = commands.Param(name="종류", choice
     if auto == "자동":
         async with aiosqlite.connect(db_path) as db:
             for _ in range(count):
-                lottery_numbers = random.sample(range(1, 46), 6)
-                lottery_numbers_str = ','.join(map(str, sorted(lottery_numbers)))
-                await db.execute('INSERT OR IGNORE INTO lottery (user_id, numbers) VALUES (?, ?)', (user_id, lottery_numbers_str))
-                purchased_numbers.append(lottery_numbers_str)
+                lotto_numbers = random.sample(range(1, 46), 6)
+                lotto_numbers_str = ','.join(map(str, sorted(lotto_numbers)))
+                await db.execute('INSERT OR IGNORE INTO lotto (user_id, numbers) VALUES (?, ?)', (user_id, lotto_numbers_str))
+                purchased_numbers.append(lotto_numbers_str)
             await db.commit()
         await ctx.send(f"{count}개의 로또가 자동으로 구매되었습니다.")
     else:
@@ -2480,11 +2480,11 @@ async def purchase_lottery(ctx, auto: str = commands.Param(name="종류", choice
                 manual_numbers = list(map(int, numbers.split(',')))
                 if len(manual_numbers) != 6 or len(set(manual_numbers)) != 6 or any(num < 1 or num > 45 for num in manual_numbers):
                     raise ValueError
-                lottery_numbers_str = ','.join(map(str, sorted(manual_numbers)))
+                lotto_numbers_str = ','.join(map(str, sorted(manual_numbers)))
                 async with aiosqlite.connect(db_path) as db:
-                    await db.execute('INSERT OR IGNORE INTO lottery (user_id, numbers) VALUES (?, ?)', (user_id, lottery_numbers_str))
+                    await db.execute('INSERT OR IGNORE INTO lotto (user_id, numbers) VALUES (?, ?)', (user_id, lotto_numbers_str))
                     await db.commit()
-                purchased_numbers.append(lottery_numbers_str)
+                purchased_numbers.append(lotto_numbers_str)
                 await ctx.send(f"로또 번호 {manual_numbers}이(가) 구매되었습니다.")
             except ValueError:
                 await ctx.send("잘못된 번호 형식입니다. 1부터 45 사이의 중복되지 않는 6개 숫자를 입력하세요.")
@@ -4450,7 +4450,7 @@ async def dm_toggle(ctx, state: str = commands.Param(name="dm여부", choices=["
     await ctx.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="수동추첨", description="로또를 수동으로 추첨합니다. [개발자전용]")
-async def manual_lottery_draw(ctx):
+async def manual_lotto_draw(ctx):
     # 개발자 ID 확인
     if ctx.author.id not in developer:
         embed = disnake.Embed(color=embederrorcolor)
@@ -4466,7 +4466,7 @@ async def manual_lottery_draw(ctx):
 
     # 당첨자 확인
     async with aiosqlite.connect(db_path) as db:
-        async with db.execute('SELECT user_id, numbers FROM lottery') as cursor:
+        async with db.execute('SELECT user_id, numbers FROM lotto') as cursor:
             winners = await cursor.fetchall()
 
     # 등수별 당첨자 수 초기화
@@ -4535,7 +4535,7 @@ async def manual_lottery_draw(ctx):
 
     # 로또 데이터 삭제
     async with aiosqlite.connect(db_path) as db:
-        await db.execute('DELETE FROM lottery')
+        await db.execute('DELETE FROM lotto')
         await db.commit()
 
     await ctx.send("추첨 결과가 지정된 채널에 전송되었으며, 로또 데이터가 삭제되었습니다.")
@@ -5276,17 +5276,17 @@ async def reset_database():
 
 reset_database.start()
 
-db_path = os.path.join('system_database', 'lotto.db')
+db_path = os.path.join('system_database', 'system.db')
 
 @tasks.loop(seconds=1)  # 매 1초마다 체크
-async def lottery_draw():
+async def lotto_draw():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 KST 시간 가져오기
     if now.weekday() == 5 and now.hour == 21 and now.minute == 45 and now.second == 0:  # 매주 토요일 21시 0분 0초
-        await draw_lottery()
+        await draw_lotto()
 
-lottery_draw.start()
+lotto_draw.start()
 
-async def draw_lottery():
+async def draw_lotto():
     async with aiosqlite.connect(db_path) as db:
         # 당첨 번호 생성
         winning_numbers = random.sample(range(1, 46), 6)
@@ -5294,7 +5294,7 @@ async def draw_lottery():
         winning_numbers_str = ','.join(map(str, sorted(winning_numbers)))
         
         # 당첨자 확인
-        async with db.execute('SELECT user_id, numbers FROM lottery') as cursor:
+        async with db.execute('SELECT user_id, numbers FROM lotto') as cursor:
             winners = await cursor.fetchall()
 
         # 등수별 당첨자 수 초기화
@@ -5362,7 +5362,7 @@ async def draw_lottery():
             await channel.send(embed=embed)
 
         # 로또 데이터 삭제 (테이블 구조 유지)
-        await db.execute('DELETE FROM lottery')
+        await db.execute('DELETE FROM lotto')
         await db.commit()
         print("로또 데이터가 삭제되었습니다.")
         await send_webhook_message("로또 추첨이 완료되었습니다.")
