@@ -4996,7 +4996,7 @@ async def handle_dm_message(message):
 
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
-        async with aiocursor := economy_aiodb.cursor():
+        async with economy_aiodb.cursor() as aiocursor:
             await aiocursor.execute("SELECT dm_ask FROM user WHERE id=?", (message.author.id,))
             dbdata = await aiocursor.fetchone()
 
@@ -5027,7 +5027,7 @@ class InquiryConfirmView(disnake.ui.View):
     async def confirm(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         db_path = os.path.join('system_database', 'economy.db')
         async with aiosqlite.connect(db_path) as economy_aiodb:
-            async with aiocursor := economy_aiodb.cursor():
+            async with economy_aiodb.cursor() as aiocursor:
                 await aiocursor.execute("UPDATE user SET dm_ask = 1 WHERE id=?", (self.message.author.id,))
                 await economy_aiodb.commit()
         
@@ -5073,7 +5073,7 @@ async def process_inquiry(message, user, avatar_url):
     async def end_inquiry_callback(interaction):
         db_path = os.path.join('system_database', 'economy.db')
         async with aiosqlite.connect(db_path) as economy_aiodb:
-            async with aiocursor := economy_aiodb.cursor():
+            async with economy_aiodb.cursor() as aiocursor:
                 await aiocursor.execute("UPDATE user SET dm_ask = 0 WHERE id=?", (message.author.id,))
                 await economy_aiodb.commit()
         await interaction.response.send_message("문의가 종료되었습니다.", ephemeral=True)
