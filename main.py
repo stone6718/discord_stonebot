@@ -938,7 +938,10 @@ async def play_next_song(ctx, channel_id, player=None):
     if not waiting_songs[channel_id]:
         channel = bot.get_channel(ctx.channel.id)
         if channel:
-            await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.")
+            if player:
+                await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.")
+            else:
+                await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 음악이 끝났습니다.")
             embed = disnake.Embed(color=embedsuccess)
             embed.add_field(name="음악 종료", value="다음 재생할 음악이 없어 음악이 종료되었습니다.")
             return await channel.send(embed=embed)
