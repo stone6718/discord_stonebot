@@ -4993,7 +4993,7 @@ async def handle_dm_message(message):
 
     db_path = os.path.join('system_database', 'economy.db')
     async with aiosqlite.connect(db_path) as economy_aiodb:
-        async with economy_aiodb.cursor() as aiocursor:
+        async with aiocursor := economy_aiodb.cursor():
             await aiocursor.execute("SELECT dm_ask FROM user WHERE id=?", (message.author.id,))
             dbdata = await aiocursor.fetchone()
 
@@ -5011,6 +5011,7 @@ async def handle_dm_message(message):
                 await aiocursor.execute("UPDATE user SET dm_ask = 0 WHERE id=?", (message.author.id,))
                 await economy_aiodb.commit()
                 await message.channel.send("문의가 종료되었습니다.")
+                await send_inquiry_end_notification(message.author)
             else:
                 await process_inquiry(message, user, avatar_url)
 
@@ -5023,7 +5024,7 @@ class InquiryConfirmView(disnake.ui.View):
     async def confirm(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         db_path = os.path.join('system_database', 'economy.db')
         async with aiosqlite.connect(db_path) as economy_aiodb:
-            async with economy_aiodb.cursor() as aiocursor:
+            async with aiocursor := economy_aiodb.cursor():
                 await aiocursor.execute("UPDATE user SET dm_ask = 1 WHERE id=?", (self.message.author.id,))
                 await economy_aiodb.commit()
         
@@ -5069,10 +5070,11 @@ async def process_inquiry(message, user, avatar_url):
     async def end_inquiry_callback(interaction):
         db_path = os.path.join('system_database', 'economy.db')
         async with aiosqlite.connect(db_path) as economy_aiodb:
-            async with economy_aiodb.cursor() as aiocursor:
+            async with aiocursor := economy_aiodb.cursor():
                 await aiocursor.execute("UPDATE user SET dm_ask = 0 WHERE id=?", (message.author.id,))
                 await economy_aiodb.commit()
         await interaction.response.send_message("문의가 종료되었습니다.", ephemeral=True)
+        await send_inquiry_end_notification(message.author)
 
     end_inquiry_button.callback = end_inquiry_callback
 
@@ -5080,6 +5082,14 @@ async def process_inquiry(message, user, avatar_url):
 
     # 특정 채널로 전송
     await send_to_support_channel(dm_embed, view)
+
+async def send_inquiry_end_notification(user):
+    embed = disnake.Embed(title="문의 종료", description=f"{user.display_name}님의 문의가 종료되었습니다.", color=embedcolor)
+    await send_to_support_channel(embed=embed)
+    try:
+        await user.send("문의가 종료되었습니다. 감사합니다.")
+    except disnake.Forbidden:
+        print(f"사용자 {user.display_name}에게 DM을 보낼 수 없습니다.")
 
 async def send_to_support_channel(embed=None, view=None, file=None):
     channel_id = int(sec.support_ch_id)
