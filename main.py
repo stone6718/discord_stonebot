@@ -5281,7 +5281,7 @@ db_path = os.path.join('system_database', 'system.db')
 @tasks.loop(seconds=1)  # 매 1초마다 체크
 async def lotto_draw():
     now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 KST 시간 가져오기
-    if now.weekday() == 5 and now.hour == 20 and now.minute == 45 and now.second == 0:  # 매주 토요일 20시 0분 0초
+    if now.weekday() == 5 and now.hour == 20 and now.minute == 45 and now.second == 0:  # 매주 토요일 20시 45분 0초
         await draw_lotto()
 
 lotto_draw.start()
