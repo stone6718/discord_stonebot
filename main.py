@@ -5498,7 +5498,14 @@ async def shutdown():
     if economy_aiodb:
         await economy_aiodb.close()
 
-try:
-    asyncio.get_event_loop().run_until_complete(startup())
-except KeyboardInterrupt:
-    asyncio.get_event_loop().run_until_complete(shutdown())
+def main():
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(startup())
+    except KeyboardInterrupt:
+        loop.run_until_complete(shutdown())
+    finally:
+        loop.close()
+
+if __name__ == "__main__":
+    main()
