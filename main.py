@@ -5228,7 +5228,8 @@ async def update_coin_prices():
 
     for coin in coins:
         name, price = coin
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
+        volatility = random.uniform(0.20, 0.20)  # 코인의 변동성 범위 설정 (20%)
+        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)  # 변동성에 따라 가격 변경
         new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가 : 3억원
         new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가 : 3백만원
         new_price = int(new_price)
@@ -5249,7 +5250,8 @@ async def update_stock_prices():
 
     for stock in stocks:
         name, price = stock
-        new_price = round(price * random.uniform(0.85, 1.15), -1)  # ±15% 범위로 변경
+        volatility = random.uniform(0.20, 0.20)  # 주식의 변동성 범위 설정 (20%)
+        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)  # 변동성에 따라 가격 변경
         new_price = min(new_price, 5000000)  # 주식 가격 상한가 : 5백만원
         new_price = max(new_price, 50000)  # 주식 가격 하한가 : 5만원
         new_price = int(new_price)
