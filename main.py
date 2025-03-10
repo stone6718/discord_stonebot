@@ -2931,7 +2931,7 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
             if defense_item_info and isinstance(defense_item_info, tuple) and defense_item_info[1] > 0:
                 await remove_item_from_user_inventory(user_id, "파괴방어권", 1)
                 embed = disnake.Embed(title="❌ 전투 실패", description="무기가 파괴될뻔했지만, 방어권 사용으로 파괴되지 않았습니다.", color=0x00ff00)
-                await interaction.edit_original_message(embed=embed, view=None)
+                await interaction.edit_original_message(embed=embed, view=view)
             else:
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
                 embed = disnake.Embed(title="❌ 전투 실패", description="전투중 무기가 파괴되었습니다.", color=0xff0000)
