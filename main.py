@@ -20,7 +20,7 @@ from disnake.ui import Button, View, Modal, TextInput
 from disnake import TextInputStyle, ButtonStyle, FFmpegPCMAudio
 from disnake import FFmpegPCMAudio
 
-intents = disnake.Intents.all()
+#intents = disnake.Intents.all()
 bot = commands.AutoShardedBot(command_prefix="/") #intents=intents)
 shard_count = min(2, max(1, len(bot.guilds) // 1000))
 token = sec.token
