@@ -754,6 +754,7 @@ class YTDLSource(disnake.PCMVolumeTransformer):
         'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
         'restrictfilenames': True,
         'noplaylist': True,
+        'cookiefile': 'cookies.txt',  # Replace with the actual path to your cookies file
     }
 
     def __init__(self, source, *, data):
