@@ -5224,17 +5224,34 @@ async def update_coin_prices():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
+    
+    # 코인 가격 정보 가져오기
     await aiocursor.execute("SELECT coin_name, price FROM coin")
     coins = await aiocursor.fetchall()
 
     for coin in coins:
         name, price = coin
-        volatility = random.uniform(0.20, 0.20)  # 코인의 변동성 범위 설정 (20%)
-        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)  # 변동성에 따라 가격 변경
+        
+        # user_coin 테이블에서 buy_price와 현재 가격의 차이를 확인
+        await aiocursor.execute("SELECT buy_price FROM user_coin WHERE coin_name = ?", (name,))
+        user_coin_data = await aiocursor.fetchall()
+        
+        # 가격이 100% 이상 차이 나는 경우를 확인
+        significant_difference = any(abs(buy_price - price) / price >= 1 for (buy_price,) in user_coin_data)
+        
+        # 변동성 범위 설정 (가격 차이가 큰 경우 하락 확률을 높임)
+        if significant_difference:
+            volatility = random.uniform(0.10, 0.20)  # 하락 확률 증가
+        else:
+            volatility = random.uniform(0.20, 0.20)  # 기본 변동성
+        
+        # 새로운 가격 계산
+        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)
         new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가 : 3억원
         new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가 : 3백만원
         new_price = int(new_price)
         
+        # 코인 가격 업데이트
         await aiocursor.execute("UPDATE coin SET price = ? WHERE coin_name = ?", (new_price, name))
         await log_price_history('coin', name, new_price)  # 가격 기록 추가
         await economy_aiodb.commit()
@@ -5251,12 +5268,27 @@ async def update_stock_prices():
 
     for stock in stocks:
         name, price = stock
-        volatility = random.uniform(0.20, 0.20)  # 주식의 변동성 범위 설정 (20%)
-        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)  # 변동성에 따라 가격 변경
+        
+        # user_stock 테이블에서 buy_price와 현재 가격의 차이를 확인
+        await aiocursor.execute("SELECT buy_price FROM user_stock WHERE stock_name = ?", (name,))
+        user_stock_data = await aiocursor.fetchall()
+        
+        # 가격이 100% 이상 차이 나는 경우를 확인
+        significant_difference = any(abs(buy_price - price) / price >= 1 for (buy_price,) in user_stock_data)
+        
+        # 변동성 범위 설정 (가격 차이가 큰 경우 하락 확률을 높임)
+        if significant_difference:
+            volatility = random.uniform(0.10, 0.20)  # 하락 확률 증가
+        else:
+            volatility = random.uniform(0.20, 0.20)  # 기본 변동성
+        
+        # 새로운 가격 계산
+        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)
         new_price = min(new_price, 5000000)  # 주식 가격 상한가 : 5백만원
         new_price = max(new_price, 50000)  # 주식 가격 하한가 : 5만원
         new_price = int(new_price)
         
+        # 주식 가격 업데이트
         await aiocursor.execute("UPDATE stock SET price = ? WHERE stock_name = ?", (new_price, name))
         await log_price_history('stock', name, new_price)  # 가격 기록 추가
         await economy_aiodb.commit()
