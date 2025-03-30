@@ -750,11 +750,10 @@ class YTDLSource(disnake.PCMVolumeTransformer):
     YTDL_OPTIONS = {
         'format': 'bestaudio/best',
         'extractaudio': True,
-        'audioformat': 'mp3',
+        'audioformat': 'm4a',
         'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
         'restrictfilenames': True,
-        'noplaylist': True,
-        'cookiefile': 'cookies.txt',  # Replace with the actual path to your cookies file
+        'noplaylist': True
     }
 
     def __init__(self, source, *, data):
