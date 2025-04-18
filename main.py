@@ -732,7 +732,8 @@ ytdl_format_options = {
     'restrictfilenames': True,
     'noplaylist': True,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
+    #'nocheckcertificate': True,  # 가능한 한 사용하지 않도록 권장
+    'ignoreerrors': True,  # 오류 무시 옵션 추가
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
@@ -748,9 +749,9 @@ ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 # 음악 소스 클래스
 class YTDLSource(disnake.PCMVolumeTransformer):
     YTDL_OPTIONS = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio/best[ext=mp3]',  # mp3 형식으로 지정
         'extractaudio': True,
-        'audioformat': 'm4a',
+        #'audioformat': 'mp3',  # 불필요
         'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
         'restrictfilenames': True,
         'noplaylist': True
