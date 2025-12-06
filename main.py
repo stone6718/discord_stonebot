@@ -1570,7 +1570,7 @@ async def add_to_playlist(ctx, playlist_name: str, song: str):
             # 음악 추가
             try:
                 async with economy_aiodb.execute('INSERT INTO playlists (user_id, playlist_name, song) VALUES (?, ?, ?)',
-                                                  (ctx.author.id, playlist_name, song)):
+                                                (ctx.author.id, playlist_name, song)):
                     await economy_aiodb.commit()
                 embed = disnake.Embed(title="추가 완료", color=0x00FF00)
                 embed.add_field(name="플레이리스트", value=f"{playlist_name} 플레이리스트에 {song}이(가) 추가되었습니다.", inline=False)
@@ -1590,7 +1590,7 @@ async def remove_from_playlist(ctx, playlist_name: str, song: str):
     db_path = os.path.join('system_database', 'music.db')
     async with aiosqlite.connect(db_path) as conn:
         cursor = await conn.execute('DELETE FROM playlists WHERE user_id = ? AND playlist_name = ? AND song = ?',
-                                     (ctx.author.id, playlist_name, song))
+                                    (ctx.author.id, playlist_name, song))
         await conn.commit()
         
         embed = disnake.Embed(title="삭제 결과", color=0x00FF00)
@@ -1976,20 +1976,22 @@ async def email_verify(ctx, email: str):
 
 @bot.slash_command(name="지갑", description="자신이나 다른 유저의 지갑을 조회합니다.")
 async def wallet(ctx, member_id: str = None):
-    if not await check_permissions(ctx):
+    if not await check_permissions(ctx):  # 기능 토글 체크
         return
 
-    if not await member_status(ctx):
+    if not await member_status(ctx):  # TOS/가입 상태 확인
         return
 
-    await command_use_log(ctx, "지갑", f"{member_id}")
+    if not ctx.response.is_done():
+        await ctx.response.defer(ephemeral=True)  # 지연 응답 확보 (중복 defer 방지)
+    await command_use_log(ctx, "지갑", f"{member_id}")  # 호출 로그
     
-    user = ctx.author if member_id is None else await bot.fetch_user(member_id)
+    user = ctx.author if member_id is None else await bot.fetch_user(member_id)  # ID로 다른 유저 조회
     if user is None:
         await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
         return
 
-    user_data = await fetch_user_data(user.id)
+    user_data = await fetch_user_data(user.id)  # 경제 DB 레코드 확인
     if user_data is None:
         await ctx.followup.send(f"{user.mention}, 가입되지 않은 유저입니다.", ephemeral=True)
         return
@@ -2008,10 +2010,10 @@ async def wallet(ctx, member_id: str = None):
         
     embed = disnake.Embed(title=f"{user.name}님의 지갑 💰", color=0x00ff00)
     embed.set_thumbnail(url=user.display_avatar.url)
-    embed.add_field(name="아이디", value=f"{user.id}", inline=False)
-    embed.add_field(name="레벨", value=f"{level:,}({exp:,}) Level", inline=False)
-    embed.add_field(name="잔액", value=f"{money:,}원", inline=False)
-    embed.add_field(name="잃은돈", value=f"{lose_money:,}원", inline=False)
+    embed.add_field(name="아이디", value=f"{user.id}", inline=False)  # 유저 ID
+    embed.add_field(name="레벨", value=f"{level:,}({exp:,}) Level", inline=False)  # 경험치와 함께 표기
+    embed.add_field(name="잔액", value=f"{money:,}원", inline=False)  # 현재 보유 금액
+    embed.add_field(name="잃은돈", value=f"{lose_money:,}원", inline=False)  # 누적 손실액
 
     await ctx.followup.send(embed=embed, ephemeral=True)
 
@@ -2165,20 +2167,17 @@ async def send_money(ctx, get_user: disnake.Member = commands.Param(name="받는
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
 
-
     aiocursor = await economy_aiodb.execute("SELECT tos FROM user WHERE id=?", (get_user.id,))
     dbdata = await aiocursor.fetchone()
     await aiocursor.close()
     if dbdata is not None:
         if int(dbdata[0]) == 1:
-            embed=disnake.Embed(color=embederrorcolor)
+            embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="받는사람이 이용제한상태이므로 송금할수없습니다.")
             await ctx.send(embed=embed, ephemeral=True)
             return
-        else:
-            pass
     else:
-        embed=disnake.Embed(color=embederrorcolor)
+        embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="받는사람이 미가입상태이므로 송금할수없습니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
@@ -2241,8 +2240,8 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
         result_embed.add_field(name="돈은 그대로 유지됩니다.", value=f"현재 금액: {current_money:,}원", inline=False)
         await economy_log(ctx, "가위바위보", "0", 0)
     elif (user_choice == "가위" and bot_choice == "보") or \
-         (user_choice == "바위" and bot_choice == "가위") or \
-         (user_choice == "보" and bot_choice == "바위"):
+        (user_choice == "바위" and bot_choice == "가위") or \
+        (user_choice == "보" and bot_choice == "바위"):
         result = "당신이 이겼습니다!"
         await addmoney(user.id, bet_amount)  # 돈을 추가
         await add_exp(user.id, round(bet_amount / 600))
@@ -3116,8 +3115,8 @@ hell_monsters = {
 }
 
 sword = ["나무검", "돌검", "철검", "단단한검", # 초원
-         "무적의검", "만용의검", "폭풍의검", # 무너진도시
-         "화염의검", "사신의낫", "불타는도끼"] # 지옥
+        "무적의검", "만용의검", "폭풍의검", # 무너진도시
+        "화염의검", "사신의낫", "불타는도끼"] # 지옥
 
 # 초원에서 사용할 수 없는 검 리스트
 veld_restricted_swords = ["무적의검", "만용의검", "폭풍의검", "화염의검", "사신의낫", "불타는도끼"]
@@ -3126,7 +3125,7 @@ master_restricted_swords = ["나무검", "돌검", "철검", "단단한검", "�
 # 지옥에서 사용할 수 없는 검 리스트
 hell_restricted_swords = ["나무검", "돌검", "철검", "단단한검","무적의검", "만용의검", "폭풍의검"]
 
-@bot.slash_command(name="몬스터사냥", description="랜덤 몬스터를 잡습니다.")
+@bot.slash_command(name="사냥", description="랜덤으로 발견되는 몬스터를 사냥합니다.")
 async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", choices=sword)):
     if not await tos(ctx):
         return
@@ -3156,9 +3155,9 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
 
     # 초원 및 고수의 땅 제한 검사
     if (monster_type == "초원" and sword_name in veld_restricted_swords) or \
-       (monster_type == "무너진도시" and sword_name in master_restricted_swords) or \
-       (monster_type == "지옥" and sword_name in hell_restricted_swords) or \
-       (monster_type is None and sword_name in veld_restricted_swords):
+        (monster_type == "무너진도시" and sword_name in master_restricted_swords) or \
+        (monster_type == "지옥" and sword_name in hell_restricted_swords) or \
+        (monster_type is None and sword_name in veld_restricted_swords):
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="❌ 오류", value=f"{sword_name}은(는) 해당 지역에서 사용할 수 없습니다.")
         await ctx.send(embed=embed)
@@ -3177,19 +3176,21 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
     # 칼의 기본 데미지 조회
     sword_damage = await get_item_damage(sword_name)
     sword_class = await get_item_class(user_id, sword_name)
-    total_damage = sword_damage * sword_class  # 최종 데미지 계산
+    base_damage = sword_damage * sword_class  # 무기 등급 반영 기본 데미지
 
     # 초기 메시지 임베드 생성
     embed = disnake.Embed(title="몬스터와의 전투!", description="", color=0x00ff00)
     embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
 
-    # 공격 버튼 생성
+    # 버튼 생성
     attack_button = disnake.ui.Button(label="공격", style=disnake.ButtonStyle.primary)
+    block_button = disnake.ui.Button(label="막기", style=disnake.ButtonStyle.secondary)
     end_battle_button = disnake.ui.Button(label="전투 종료", style=disnake.ButtonStyle.danger)
 
     # 버튼 뷰 생성
     view = disnake.ui.View(timeout=None)  # 뷰의 타임아웃을 설정하지 않음
     view.add_item(attack_button)
+    view.add_item(block_button)
     view.add_item(end_battle_button)
 
     # 메시지 전송
@@ -3199,14 +3200,37 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
         await ctx.send(f"메시지를 전송하는 데 실패했습니다: {str(e)}")
         return
 
+    event_active = False  # 역공격 발생 여부
+    event_expires_at: float | None = None  # 역공격 유효 시간
+
     async def attack_callback(interaction):
         await interaction.response.defer()  # 응답 지연
-        nonlocal monster_hp
+        nonlocal monster_hp, event_active, event_expires_at
 
-        # 몬스터 도망 확률 체크
-        if random.random() < 0.05:  # 5% 확률로 도망
+        # 역공격 발생 중인데 공격을 누른 경우: 30% 무기 파괴
+        if event_active:
+            if random.random() < 0.3:
+                await remove_item_from_user_inventory(user_id, sword_name, 1)
+                embed = disnake.Embed(title="❌ 전투 실패", description="역공격을 막지 못해 무기가 파괴되었습니다.", color=0xff0000)
+                await interaction.edit_original_message(embed=embed, view=None)
+                return
+            # 파괴를 면했으면 역공격 상태 해제 후 이어서 공격
+            event_active = False
+            event_expires_at = None
+
+        # 몬스터 도망 확률 체크 (5%)
+        if random.random() < 0.05:
             embed = disnake.Embed(title="❌ 전투 실패", description="몬스터가 도망갔습니다.", color=0xff0000)
             await interaction.edit_original_message(embed=embed, view=None)  # 버튼 제거
+            return
+
+        # 3% 확률 역공격 트리거: 막기 버튼 유도
+        if random.random() < 0.03:
+            event_active = True
+            event_expires_at = asyncio.get_event_loop().time() + 5  # 5초 내 막기 필요
+            embed = disnake.Embed(title="⚠️ 돌발! 몬스터 역공격", description="막기 버튼을 눌러 피해를 막으세요. 공격 시 50% 확률로 무기 파괴됩니다.", color=embedwarning)
+            embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
+            await interaction.edit_original_message(embed=embed, view=view)
             return
 
         # 공격 시 칼의 파괴 확률
@@ -3222,30 +3246,92 @@ async def catch_monster(ctx, sword_name: str = commands.Param(name="검이름", 
                 await remove_item_from_user_inventory(user_id, sword_name, 1)
                 embed = disnake.Embed(title="❌ 전투 실패", description="전투중 무기가 파괴되었습니다.", color=0xff0000)
                 await interaction.edit_original_message(embed=embed, view=None)
-        # 몬스터에게 데미지 입힘
-        monster_hp -= total_damage
+                return
+
+        # 한 번의 공격 데미지 계산: 명중/치명/변동폭 적용
+        miss = random.random() < 0.1  # 10% 빗나감
+        crit = random.random() < 0.2  # 20% 치명타 (2배)
+        variance = random.uniform(0.85, 1.15)
+        damage = 0 if miss else int(base_damage * variance * (2 if crit else 1))
+
+        monster_hp -= damage
 
         if monster_hp > 0:
+            status = []
+            if miss:
+                status.append("공격이 빗나갔습니다.")
+            else:
+                hit_text = f"{damage} 피해" + (" (치명타!)" if crit else "")
+                status.append(hit_text)
             embed = disnake.Embed(title="몬스터와의 전투!", color=0x00ff00)
-            embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
-            await interaction.message.edit(embed=embed, view=view)
+            embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {max(monster_hp, 0)}", inline=False)
+            embed.add_field(name="전투 로그", value="\n".join(status), inline=False)
+            await interaction.edit_original_message(embed=embed, view=view)
         else:
             reward = monsters[monster_name]["reward"]
             await add_cash_item_count(user_id, reward)
             embed = disnake.Embed(title="✅ 전투 성공", description="", color=0x00ff00)
             embed.add_field(name="", value=f"{monster_name}을(를) 처치했습니다! 보상으로 {reward}을(를) 받았습니다.")
-            await interaction.message.edit(embed=embed, view=None)  # 버튼 제거
+            await interaction.edit_original_message(embed=embed, view=None)  # 버튼 제거
             return  # 전투 종료 후 함수 종료
+
+    async def block_callback(interaction):
+        await interaction.response.defer()
+        nonlocal event_active, event_expires_at
+        now = asyncio.get_event_loop().time()
+
+        if event_active and event_expires_at and now <= event_expires_at:
+            event_active = False
+            event_expires_at = None
+            embed = disnake.Embed(title="🛡️ 방어 성공", description="역공격을 막았습니다!", color=0x00ff00)
+        else:
+            embed = disnake.Embed(title="🛡️ 방어", description="현재 막을 공격이 없습니다.", color=embedwarning)
+        embed.add_field(name=f"몬스터: {monster_name}", value=f"HP: {monster_hp}", inline=False)
+        await interaction.edit_original_message(embed=embed, view=view)
 
     async def end_battle_callback(interaction):
         await interaction.response.defer()  # 응답 지연
         embed = disnake.Embed(title="⚔️ 전투 종료", description="", color=0xff0000)
         embed.add_field(name="", value="전투가 종료되었습니다.")
-        await interaction.followup.edit_message(embed=embed, view=None)  # 버튼 제거
+        await interaction.edit_original_message(embed=embed, view=None)  # 버튼 제거
 
     # 버튼 콜백 설정
     attack_button.callback = attack_callback
+    block_button.callback = block_callback
     end_battle_button.callback = end_battle_callback
+
+@bot.slash_command(name="사냥터정보", description="사냥터별 몬스터와 사용 가능 무기 정보를 안내합니다.")
+async def hunting_info(ctx):
+    if not await tos(ctx):
+        return
+    if not ctx.response.is_done():
+        await ctx.response.defer(ephemeral=True)
+
+    await command_use_log(ctx, "사냥터정보", None)
+
+    server_id = str(ctx.guild.id)
+    channel_id = str(ctx.channel.id)
+    current_type = await get_monster_type(server_id, channel_id)
+
+    regions = {
+        "초원": (weak_monsters, veld_restricted_swords),
+        "무너진도시": (citi_monsters, master_restricted_swords),
+        "지옥": (hell_monsters, hell_restricted_swords),
+    }
+
+    embed = disnake.Embed(title="사냥터 정보", color=embedcolor)
+    embed.add_field(name="현재 채널 사냥터", value=current_type or "(미설정, 기본 초원)", inline=False)
+
+    for name, (monsters_map, restricted) in regions.items():
+        monsters_text = "\n".join([f"{m} — HP {info['hp']}, 보상 {info['reward']}" for m, info in monsters_map.items()])
+        allowed = [s for s in sword if s not in restricted]
+        embed.add_field(
+            name=f"{name}",
+            value=f"몬스터:\n{monsters_text}\n\n사용 가능 무기: {', '.join(allowed)}",
+            inline=False,
+        )
+
+    await ctx.followup.send(embed=embed, ephemeral=True)
 
 @bot.slash_command(name="아이템사용", description="경험치 병을 사용하여 경험치를 증가시킵니다.")
 async def use_experience_potion(ctx, count: int = commands.Param(name="개수")):
@@ -3979,11 +4065,11 @@ async def stock_list(ctx):
         return
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "주식목록", None)
-    data = await getstock()
-    view = StockView1(data)
+    await command_use_log(ctx, "주식목록", None)  # 호출 로그
+    data = await getstock()  # 상장 주식 목록 로드
+    view = StockView1(data)  # 간단 페이지네이션 뷰
     embed = await view.create_embed()
-    view.message = await ctx.send(embed=embed, view=view)
+    view.message = await ctx.send(embed=embed, view=view)  # 첫 페이지 전송
 
 @tasks.loop(seconds=20)
 async def view_update1(view:StockView1):
@@ -4067,10 +4153,10 @@ async def get_stock_price(stock_name):
 async def stock_wallet(ctx):
     if not await tos(ctx):
         return
-    await ctx.response.defer()
+    await ctx.response.defer()  # 이후 follow-up 사용 대비
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "주식통장", None)
+    await command_use_log(ctx, "주식통장", None)  # 호출 로그
     if not await member_status(ctx):
         return
 
@@ -4082,10 +4168,10 @@ async def stock_wallet(ctx):
         embed = disnake.Embed(title=f"{user_name}의 주식통장 💰", color=0x00ff00)
         embed.add_field(name="❌ 오류", value="보유하고 있는 주식이 없습니다.")
         embed.add_field(name="💵 총 가격", value="0 원", inline=False)
-        await ctx.send(embed=embed)
+        await ctx.followup.send(embed=embed)
     else:
-        view = StockView(stocks)
-        view.message = await ctx.send(embed=await view.create_embed(), view=view)
+        view = StockView(stocks)  # 페이지네이션 뷰 생성
+        view.message = await ctx.followup.send(embed=await view.create_embed(), view=view)  # 첫 페이지 전송
 
 @bot.slash_command(name="주식거래", description="주식을 구매 또는 판매할 수 있습니다.")
 async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice: str = commands.Param(name="선택", choices=["구매", "판매"]), _count: int = commands.Param(name="개수")):
@@ -4094,7 +4180,7 @@ async def stock_trading(ctx, _name: str = commands.Param(name="이름"), choice:
     await ctx.response.defer()
     if not await check_permissions(ctx):
         return
-    await command_use_log(ctx, "주식거래", f"{_name}, {choice}, {_count}")
+    await command_use_log(ctx, "주식거래", f"{_name}, {choice}, {_count}")  # 호출 로그
     if not await member_status(ctx):
         return
     
@@ -4378,39 +4464,39 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
     if not await check_permissions(ctx):
         return
 
-    await command_use_log(ctx, "청소", f"{num}")
-    await ctx.response.defer(ephemeral=True)  # 응답 지연
+    await command_use_log(ctx, "청소", f"{num}")  # 명령어 로그 기록
+    await ctx.response.defer(ephemeral=True)  # 이후 응답을 follow-up 수정으로 보낼 것임
 
     if not ctx.author.guild_permissions.manage_messages:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="관리자만 실행가능한 명령어입니다.")
-        await ctx.edit_original_response(embed=embed)
+        await ctx.edit_original_response(embed=embed)  # 권한 부족 안내
         return
 
     try:
-        num = int(num)
+        num = int(num)  # 슬래시 파라미터 안전 캐스팅
         if num <= 0 or num > 100:
             embed = disnake.Embed(color=embederrorcolor)
             embed.add_field(name="❌ 오류", value="삭제할 메시지 수는 1 이상 100 이하이어야 합니다.")
-            await ctx.edit_original_response(embed=embed)
+            await ctx.edit_original_response(embed=embed)  # 잘못된 범위 안내
             return
 
-        deleted_messages = await ctx.channel.purge(limit=num)
+        deleted_messages = await ctx.channel.purge(limit=num)  # 메시지 일괄 삭제
         embed = disnake.Embed(color=embedsuccess)
         embed.add_field(name="✅ 삭제 완료", value=f"{len(deleted_messages)}개의 메시지를 삭제했습니다.")
-        await ctx.edit_original_response(embed=embed)
+        await ctx.edit_original_response(embed=embed)  # 결과 반환
     except ValueError as ve:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value=str(ve))
-        await ctx.edit_original_response(embed=embed)
+        await ctx.edit_original_response(embed=embed)  # 타입 변환 오류 안내
     except disnake.NotFound:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="삭제할 메시지를 찾을 수 없습니다.")
-        await ctx.edit_original_response(embed=embed)
+        await ctx.edit_original_response(embed=embed)  # 대상 메시지 없음
     except Exception:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="메시지 삭제에 실패했습니다.")
-        await ctx.edit_original_response(embed=embed)
+        await ctx.edit_original_response(embed=embed)  # 기타 오류 안내
 
 @bot.slash_command(name="공지", description="서버에 공지를 전송합니다. [관리자전용]")
 async def notification(ctx, content: str = commands.Param(name="내용")):
@@ -4990,7 +5076,7 @@ async def item_management(ctx, item_name: str, choice: str = commands.Param(name
 
 @bot.slash_command(name="가상화폐관리", description="가상화폐를 추가하거나 삭제할 수 있습니다. [개발자전용]")
 async def coin_management(ctx, _name: str, choice: str = commands.Param(name="선택", choices=["추가", "삭제"]), 
-                          _price: float = commands.Param(name="가격", default=None)):
+                        _price: float = commands.Param(name="가격", default=None)):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "가상화폐관리", f"{_name}, {_price}")
@@ -5018,7 +5104,7 @@ async def coin_management(ctx, _name: str, choice: str = commands.Param(name="�
 
 @bot.slash_command(name="주식관리", description="주식을 추가하거나 삭제할 수 있습니다. [개발자전용]")
 async def stock_management(ctx, _name: str, choice: str = commands.Param(name="선택", choices=["추가", "삭제"]), 
-                           _price: float = commands.Param(name="가격", default=None)):
+                        _price: float = commands.Param(name="가격", default=None)):
     if not await check_permissions(ctx):
         return
     await command_use_log(ctx, "주식관리", f"{_name}, {_price}")
