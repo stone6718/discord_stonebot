@@ -1,4 +1,5 @@
-import json, smtplib, os, openai, pytz, random
+import json, smtplib, os, pytz, random
+from openai import OpenAI
 import aiosqlite, disnake, requests, aiohttp
 import security as sec
 from datetime import datetime
@@ -296,22 +297,23 @@ def translate_product(df):
     df['Language'] = df['Before_Trans'].apply(lambda x: translator.detect(x).lang)
     return df
 
-openai.api_key = sec.OpenAI_api_key
+# OpenAI client 초기화 (sec.OpenAI_api_key 사용)
+openai_client = OpenAI(api_key=sec.OpenAI_api_key)
+
 
 def get_gpt_response(prompt, model):
     try:
-        # API 호출
-        response = openai.ChatCompletion.create(
-            model=model,  # 선택한 모델을 사용합니다.
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+        # API 호출 (new OpenAI client)
+        response = openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}]
         )
-        
+
         # 응답에서 텍스트 추출
-        answer = response['choices'][0]['message']['content']
+        # 구조는 response.choices[0].message.content 형태를 기대합니다.
+        answer = response.choices[0].message.content
         return answer
-    
+
     except Exception as e:
         return f"오류 발생: {str(e)}"
 
@@ -322,17 +324,19 @@ def generate_image(prompt):
     translated_text = result.text
     prompt = str(translated_text)
     try:
-        # DALL·E API 호출
-        response = openai.Image.create(
+        # 이미지 생성 API 호출 (new OpenAI client)
+        # 모델은 OpenAI 이미지 모델 이름을 사용합니다 (예: "gpt-image-1").
+        response = openai_client.images.generate(
+            model="gpt-image-1",
             prompt=prompt,
+            size="1024x1024",
             n=1,
-            size="1024x1024",  # 이미지 크기 설정
         )
-        
+
         # 이미지 URL 추출
-        image_url = response['data'][0]['url']
+        image_url = response.data[0].url
         return image_url
-    
+
     except Exception as e:
         return f"오류 발생: {str(e)}"
 
@@ -953,23 +957,40 @@ async def get_lose_money(_id):
 
 async def add_exp(user_id, amount):
     db_path = os.path.join('system_database', 'economy.db')
-    
+    economy_aiodb = None
+    aiocursor = None
     try:
         economy_aiodb = await aiosqlite.connect(db_path)
-        aiocursor = await economy_aiodb.execute("SELECT * FROM user WHERE id=?", (user_id,))
-        dat = await aiocursor.fetchall()
-        
-        if not dat:
+
+        # 현재 exp 조회 (필요 시 존재 확인)
+        aiocursor = await economy_aiodb.execute("SELECT exp FROM user WHERE id=?", (user_id,))
+        row = await aiocursor.fetchone()
+        if not row:
+            # 사용자 레코드가 없으면 아무 것도 하지 않고 반환
             return
-        
-        new_exp = dat[0][4] + amount
-        await aiocursor.execute("UPDATE user SET exp = ? WHERE id = ?", (new_exp, user_id))
-        await economy_aiodb.commit()  # 커밋은 업데이트 후에
-    except Exception as e:
-        print(f"오류 발생: {e}")  # 오류 로그 출력
-    finally:
+
+        current_exp = row[0] if row[0] is not None else 0
+
+        # 기존 커서 닫기 후 별도 업데이트 커서 사용
         await aiocursor.close()
-        await economy_aiodb.close()
+        aiocursor = await economy_aiodb.execute(
+            "UPDATE user SET exp = ? WHERE id = ?",
+            (current_exp + amount, user_id)
+        )
+        await economy_aiodb.commit()
+    except Exception as e:
+        print(f"add_exp 오류 발생: {e}")
+    finally:
+        if aiocursor is not None:
+            try:
+                await aiocursor.close()
+            except Exception:
+                pass
+        if economy_aiodb is not None:
+            try:
+                await economy_aiodb.close()
+            except Exception:
+                pass
 
 async def get_exp(_id):
     db_path = os.path.join('system_database', 'economy.db')

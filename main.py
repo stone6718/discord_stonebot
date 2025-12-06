@@ -3,7 +3,7 @@ import logging
 import yt_dlp as youtube_dl
 import bs4, re, pytz, math, time, os, coolsms_kakao
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
-import random, string, datetime, psutil, websocket, aiohttp, cpuinfo
+import random, string, datetime, psutil, aiohttp, cpuinfo
 from gtts import gTTS
 from def_list import *
 import matplotlib.pyplot as plt
@@ -15,7 +15,6 @@ from importlib.metadata import version
 from permissions import get_permissions
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
 from disnake.ui import Button, View, Modal, TextInput
 from disnake import TextInputStyle, ButtonStyle, FFmpegPCMAudio
 from disnake import FFmpegPCMAudio
@@ -24,10 +23,36 @@ from disnake import FFmpegPCMAudio
 bot = commands.AutoShardedBot(command_prefix="/") #intents=intents)
 shard_count = min(2, max(1, len(bot.guilds) // 1000))
 token = sec.token
-developer = [int(dev_id) for dev_id in sec.developer_id]
+# 보안 설정의 developer_id는 문자열 또는 리스트일 수 있음.
+# 문자열이면 전체 ID 하나로 처리하고, 리스트면 각 항목을 정수로 변환한다.
+raw_developer = getattr(sec, 'developer_id', None)
+if isinstance(raw_developer, (list, tuple)):
+    try:
+        developer = [int(dev_id) for dev_id in raw_developer]
+    except Exception:
+        developer = []
+elif isinstance(raw_developer, str):
+    try:
+        developer = [int(raw_developer)]
+    except Exception:
+        developer = []
+else:
+    developer = []
 
 # 시작 시간 기록
 start_time = datetime.now()
+
+# 기준 디렉토리: 이 스크립트 파일의 위치로 작업 디렉토리 고정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    os.chdir(BASE_DIR)
+except Exception:
+    # 변경 실패 시 무시하되, 이후 경로 해석에서 BASE_DIR을 사용하도록 보장
+    pass
+
+# 필요한 데이터베이스 폴더가 없으면 생성 (안전장치)
+os.makedirs(os.path.join(BASE_DIR, 'system_database'), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, 'database'), exist_ok=True)
 
 embedcolor = 0xff00ff
 embedwarning = 0xff9900
@@ -36,21 +61,120 @@ embederrorcolor = 0xff0000
 
 cpu_info = cpuinfo.get_cpu_info()
 
-# 한글 폰트 설정
-font_path = 'NanumGothic.ttf'  # 시스템에 맞는 한글 폰트 경로로 변경
-font_manager.fontManager.addfont(font_path)
-rc('font', family='NanumGothic')
+# 한글 폰트 설정: 파일 경로 확인 후 없으면 시스템 폰트로 폴백
+def _set_korean_font():
+    candidates_paths = [
+        os.path.join(os.path.dirname(__file__), 'NanumGothic.ttf'),
+        os.path.join(os.getcwd(), 'NanumGothic.ttf'),
+        'NanumGothic.ttf',
+    ]
+    for p in candidates_paths:
+        try:
+            if os.path.isfile(p):
+                font_manager.fontManager.addfont(p)
+                rc('font', family='NanumGothic')
+                return
+        except Exception:
+            pass
+    # 시스템 폰트 폴백 (Windows/맥/기본)
+    for fam in ('Malgun Gothic', 'AppleGothic', 'NanumGothic', 'DejaVu Sans'):
+        try:
+            font_manager.findfont(fam, fallback_to_default=False)
+            rc('font', family=fam)
+            return
+        except Exception:
+            continue
+
+_set_korean_font()
+
+# FFmpeg 경로 폴백: 1) 환경변수 FFMPEG_PATH 2) security 설정 3) 흔한 설치 경로 자동 탐지 4) 시스템 PATH
+def _which_ffmpeg():
+    candidates = []
+    env_path = os.environ.get("FFMPEG_PATH")
+    if env_path:
+        candidates.append(env_path)
+    sec_path = getattr(sec, "FFMPEG_PATH", None)
+    if sec_path:
+        candidates.append(sec_path)
+    # 흔한 설치 경로들
+    candidates.extend([
+        r"C:\\ffmpeg\\bin\\ffmpeg.exe",
+        r"C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
+        r"C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
+        os.path.join(os.getcwd(), "ffmpeg", "bin", "ffmpeg.exe"),
+    ])
+    for p in candidates:
+        try:
+            if p and os.path.isfile(p):
+                return p
+        except Exception:
+            pass
+    return None
+
+FFMPEG_EXECUTABLE = _which_ffmpeg()
+
+def ffmpeg_kwargs():
+    base = {"before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5", "options": "-vn"}
+    if FFMPEG_EXECUTABLE:
+        return {"executable": FFMPEG_EXECUTABLE, **base}
+    return base
 ##################################################################################################
-# 데이터베이스에서 권한을 가져오는 함수
+# 데이터베이스에서 권한을 가져오는 함수 (없으면 생성)
 async def get_permissions(server_id: int):
     db_path = f"database/{server_id}.db"
+    # 테이블 생성 및 기본 레코드 보장
     async with aiosqlite.connect(db_path) as db:
-        async with db.execute("SELECT 음악기능, 경제기능, 관리기능, 유틸리티기능, 주식명령어, 코인명령어, 게임명령어, 인증, 인증_문자, 인증_이메일, 채팅관리명령어, 유저관리명령어 FROM 설정") as cursor:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS "설정" (
+                "음악기능" INTEGER DEFAULT 1,
+                "경제기능" INTEGER DEFAULT 1,
+                "관리기능" INTEGER DEFAULT 1,
+                "유틸리티기능" INTEGER DEFAULT 1,
+                "주식명령어" INTEGER DEFAULT 1,
+                "코인명령어" INTEGER DEFAULT 1,
+                "게임명령어" INTEGER DEFAULT 1,
+                "인증" INTEGER DEFAULT 1,
+                "인증_문자" INTEGER DEFAULT 1,
+                "인증_이메일" INTEGER DEFAULT 1,
+                "채팅관리명령어" INTEGER DEFAULT 1,
+                "유저관리명령어" INTEGER DEFAULT 1
+            )
+            """
+        )
+        # 레코드가 없으면 기본값 한 줄 삽입
+        cur = await db.execute("SELECT COUNT(*) FROM 설정")
+        cnt_row = await cur.fetchone()
+        await cur.close()
+        count = cnt_row[0] if cnt_row else 0
+        if count == 0:
+            await db.execute(
+                """
+                INSERT INTO "설정" (
+                    "음악기능","경제기능","관리기능","유틸리티기능",
+                    "주식명령어","코인명령어","게임명령어","인증",
+                    "인증_문자","인증_이메일","채팅관리명령어","유저관리명령어"
+                ) VALUES (1,1,1,1, 1,1,1,1, 1,1,1,1)
+                """
+            )
+            await db.commit()
+
+        async with db.execute(
+            "SELECT 음악기능, 경제기능, 관리기능, 유틸리티기능, 주식명령어, 코인명령어, 게임명령어, 인증, 인증_문자, 인증_이메일, 채팅관리명령어, 유저관리명령어 FROM 설정 LIMIT 1"
+        ) as cursor:
             row = await cursor.fetchone()
-            return list(row) if row else [1] * 11  # 기본값: 모두 활성화
+            # 기본값: 모두 활성화 (12개)
+            return list(row) if row else [1] * 12
 
 # 명령어 사용 권한 체크
 async def check_permissions(ctx):
+    # DM 등 길드 컨텍스트가 없으면 권한 체크를 진행할 수 없음
+    if ctx.guild is None:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="이 명령어는 서버에서만 사용할 수 있습니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return False
+
     command_permissions = {
         "음악기능": (0, "음악 기능이 비활성화되어 있습니다."),
         "경제기능": (1, "경제 기능이 비활성화되어 있습니다."),
@@ -319,77 +443,111 @@ async def weather(ctx, region: str = commands.Param(name="지역", description="
     if not ctx.response.is_done():
         await ctx.response.defer(ephemeral=False)
     try:
-        now = datetime.now()  # 현재 시각 가져오기
+        now = datetime.now()  # 현재 시각
 
-        search = region + " 날씨"
-        url = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=" + search
-        hdr = {'User-Agent': 'Mozilla/5.0'}
-        req = requests.get(url, headers=hdr)
+        # 네이버 검색(스크래핑)
+        search = f"{region} 날씨"
+        url = (
+            "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query="
+            + search
+        )
+        hdr = {"User-Agent": "Mozilla/5.0"}
+        req = requests.get(url, headers=hdr, timeout=10)
+        req.raise_for_status()
         html = req.text
         bsObj = bs4.BeautifulSoup(html, "html.parser")
 
-        temperature = bsObj.find('div', class_='temperature_text')
-        온도텍 = temperature.text
-        온도결과 = re.sub(r'[^0-9.]', '', 온도텍.strip().split('°')[0])
+        def _clean_num(temp_text: str) -> str:
+            if not temp_text:
+                return "정보 없음"
+            m = re.search(r"-?\d+(?:\.\d+)?", temp_text)
+            return m.group(0) if m else "정보 없음"
 
-        체감온도 = bsObj.find('div', class_='sort')
-        체감온도텍 = 체감온도.text
-        체감온도결과 = re.sub(r'[^0-9.]', '', 체감온도텍.strip().split('°')[0])
+        def _emoji_level(txt: str) -> str:
+            mapping = {
+                "좋음": "😀(좋음)",
+                "보통": "😐(보통)",
+                "나쁨": "😷(나쁨)",
+                "매우나쁨": "😡(매우나쁨)",
+            }
+            return mapping.get(txt.strip(), "정보 없음") if txt else "정보 없음"
 
-        미세먼지 = bsObj.find('li', class_='item_today level2')
-        미세2 = 미세먼지.find('span', class_='txt')
-        미세먼지결과 = 미세2.text
-        
-        if 미세먼지결과 == "좋음":
-            미세결과 = "😀(좋음)"
-        elif 미세먼지결과 == "보통":
-            미세결과 = "😐(보통)"
-        elif 미세먼지결과 == "나쁨":
-            미세결과 = "😷(나쁨)"
-        elif 미세먼지결과 == "매우나쁨":
-            미세결과 = "😡(매우나쁨)"
+        # 온도 파싱: 여러 선택자 시도
+        temp_node = bsObj.select_one("div.temperature_text") or bsObj.select_one(
+            "strong.temperature"
+        )
+        온도텍 = temp_node.get_text(" ").strip() if temp_node else None
+        if not 온도텍:
+            # 전체 텍스트에서 첫 ° 숫자 찾기 (폴백)
+            m = re.search(r"(-?\d+(?:\.\d+)?)°", bsObj.get_text(" "))
+            온도결과 = m.group(1) if m else "정보 없음"
         else:
-            미세결과 = "정보 없음"
+            온도결과 = _clean_num(온도텍)
 
-        초미세먼지들 = bsObj.find_all('li', class_='item_today level2')
-        if len(초미세먼지들) >= 2:
-            초미세먼지 = 초미세먼지들[1]  
-            미세2 = 초미세먼지.find('span', class_='txt')
-            초미세먼지결과 = 미세2.text
-            if 초미세먼지결과 == "좋음":
-                초미세결과 = "😀(좋음)"
-            elif 초미세먼지결과 == "보통":
-                초미세결과 = "😐(보통)"
-            elif 초미세먼지결과 == "나쁨":
-                초미세결과 = "😷(나쁨)"
-            elif 초미세먼지결과 == "매우나쁨":
-                초미세결과 = "😡(매우나쁨)"
-            else:
-                초미세결과 = "정보 없음"
+        # 체감온도 파싱: 클래스가 자주 변하므로 정규식 폴백
+        # 1) 기존 구조 시도
+        feel_node = bsObj.select_one("div.sort")
+        체감온도텍 = feel_node.get_text(" ").strip() if feel_node else None
+        if not 체감온도텍:
+            # 2) 본문 텍스트에서 '체감' 인접 숫자 찾기
+            text_all = bsObj.get_text(" ")
+            m = re.search(r"체감\s*(-?\d+(?:\.\d+)?)", text_all)
+            체감온도결과 = m.group(1) if m else "정보 없음"
         else:
-            초미세결과 = "정보 없음"
+            체감온도결과 = _clean_num(체감온도텍)
 
-        기후 = bsObj.find('p', class_='summary')
-        기후2 = 기후.find('span', class_='weather before_slash')
-        기후결과 = 기후2.text
+        # 미세먼지/초미세먼지: 라벨 텍스트로 검색 후 등급 추출
+        미세결과 = "정보 없음"
+        초미세결과 = "정보 없음"
 
-        embed = disnake.Embed(title=region + ' 날씨 정보', description='현재 온도', color=disnake.Color(0x2ECCFA))
-        embed.add_field(name=f"{온도결과}℃", value=f'체감 {체감온도결과}', inline=False)
+        # 후보 li 요소들 스캔
+        for li in bsObj.select("li")[:200]:  # 과도한 탐색 제한
+            txt = li.get_text(" ")
+            if "미세먼지" in txt and "초미세" not in txt:
+                level = None
+                for k in ("좋음", "보통", "나쁨", "매우나쁨"):
+                    if k in txt:
+                        level = k
+                        break
+                미세결과 = _emoji_level(level)
+            if "초미세" in txt:
+                level = None
+                for k in ("좋음", "보통", "나쁨", "매우나쁨"):
+                    if k in txt:
+                        level = k
+                        break
+                초미세결과 = _emoji_level(level)
+
+        # 기후(날씨 설명)
+        기후결과 = "정보 없음"
+        summary_node = bsObj.select_one("p.summary")
+        if summary_node:
+            weather_node = summary_node.select_one("span.weather") or summary_node.select_one(
+                "span.weather.before_slash"
+            )
+            기후결과 = weather_node.get_text(" ").strip() if weather_node else "정보 없음"
+
+        embed = disnake.Embed(
+            title=f"{region} 날씨 정보",
+            description="현재 온도",
+            color=disnake.Color(0x2ECCFA),
+        )
+        embed.add_field(name=f"{온도결과}℃" if 온도결과 != "정보 없음" else "온도", value=f"체감 {체감온도결과}", inline=False)
         embed.add_field(name="미세먼지", value=f"{미세결과}", inline=False)
         embed.add_field(name="초미세먼지", value=f"{초미세결과}", inline=False)
         embed.add_field(name="기후", value=f"{기후결과}", inline=False)
-
         embed.set_footer(text=f"시각 : {now.hour}시 {now.minute}분 {now.second}초")
-    
+
         await ctx.send(embed=embed)
 
     except Exception as e:
-        await ctx.send("올바른 지역을 입력해주세요")
+        # 더 친절한 오류 메시지 제공
+        await ctx.send("날씨 정보를 가져오지 못했습니다. 지역명을 다시 확인하거나 잠시 후 재시도해주세요.")
 
 @bot.slash_command(name="ai질문", description="GPT에게 질문하거나 DALL·E에게 이미지 생성을 요청합니다.")
 async def ai_ask(ctx,
-                  choice: str = commands.Param(name="모델", choices=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini", "DALL·E"]), 
-                  ask: str = commands.Param(name="질문")):
+                choice: str = commands.Param(name="모델", choices=["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini", "DALL·E"]), 
+                ask: str = commands.Param(name="질문")):
     if not await tos(ctx):
         return
     if not await check_permissions(ctx):
@@ -469,13 +627,7 @@ async def ai_chat(ctx, ask: str = commands.Param(name="내용")):
 
     try:
         # GPT API 호출
-        answer = get_gpt_response(('''너는 이제부터 스톤이야, 
-        돌맹이는 스톤을 만든 개발자야, 
-        반말로 말을 해줘, 
-        친근하게 말을 해줘, 
-        이모지를 사용해서 말을 해줘, 
-        너는 돌맹이가 만들었어, 
-        ''' + ask), "gpt-4o-mini")
+        answer = get_gpt_response(ask, "ft:gpt-4.1-2025-04-14:personal:stonebot:ChsZW7qE")
 
         if len(answer) > 500:
             pass
@@ -715,9 +867,13 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
         tts.save(f"{tmp_file.name}.mp3")  # 임시 파일로 저장
 
         # 음성 파일 재생
-        voice_client.play(disnake.FFmpegPCMAudio(f"{tmp_file.name}.mp3"))
+        voice_client.play(disnake.FFmpegPCMAudio(f"{tmp_file.name}.mp3", **ffmpeg_kwargs()))
 
-        embed = disnake.Embed(title="TTS 재생", description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**", color=0x00ff00)
+        embed = disnake.Embed(
+            title="TTS 재생",
+            description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**",
+            color=0x00ff00,
+        )
         await ctx.followup.send(embed=embed, ephemeral=True)
 
         # 재생이 끝날 때까지 대기
@@ -725,7 +881,8 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
             await asyncio.sleep(1)  # asyncio.sleep 사용
 
 # 유튜브 다운로드 설정
-youtube_dl.utils.bug_reports_message = lambda: ''
+# yt_dlp가 bug_reports_message(before=...) 형태로 호출하므로 가변 인자를 받아 에러를 방지
+youtube_dl.utils.bug_reports_message = lambda *args, **kwargs: ''
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -740,10 +897,7 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
 }
-ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
-}
+ffmpeg_options = ffmpeg_kwargs()
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 # 음악 소스 클래스
@@ -767,9 +921,10 @@ class YTDLSource(disnake.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
+        loop = loop or asyncio.get_event_loop()
         ydl = youtube_dl.YoutubeDL(cls.YTDL_OPTIONS)
         data = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=not stream))
-        if 'entries' in data:
+        if 'entries' in data and data['entries']:
             data = data['entries'][0]
         filename = data['url'] if stream else ydl.prepare_filename(data)
         source = FFmpegPCMAudio(filename, **ffmpeg_options)
@@ -907,13 +1062,21 @@ async def play_song(ctx, channel_id, url_or_name, author):
         return await ctx.send("음성 채널에 연결되어 있지 않습니다.")
 
     try:
-        player = await YTDLSource.from_url(f"ytsearch:{url_or_name}", loop=bot.loop, stream=True)
+        # If caller passed a full URL or an extractor URL (contains '://') or already used ytsearch:,
+        # pass it through directly. Otherwise, perform a ytsearch lookup.
+        if isinstance(url_or_name, str) and (url_or_name.startswith("http") or "://" in url_or_name or url_or_name.startswith("ytsearch:")):
+            source_input = url_or_name
+        else:
+            source_input = f"ytsearch:{url_or_name}"
+
+        player = await YTDLSource.from_url(source_input, loop=bot.loop, stream=True)
         voice_client.play(player, after=lambda e: bot.loop.create_task(play_next_song(ctx, channel_id)) if e is None else print(f"Error: {e}"))
+
         await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 {player.title} 음악을 재생했습니다.")
         embed = disnake.Embed(color=0x00ff00, title="음악 재생", description=player.title)
         if player.thumbnail:
             embed.set_image(url=player.thumbnail)
-        
+
         # 음악 길이와 현재 재생 분초 표시
         duration = player.data.get('duration')
         if duration:
@@ -929,8 +1092,16 @@ async def play_song(ctx, channel_id, url_or_name, author):
             embed.set_footer(text=f"재생한 사람: {author.display_name} | 길이: {length_str}")
         else:
             embed.set_footer(text=f"재생한 사람: {author.display_name}")
-        
-        await send_control_buttons(ctx, embed)
+
+        # send control buttons and get the sent message so we can update playback time
+        control_message = await send_control_buttons(ctx, embed)
+
+        # Start a background task to update playback time on the embed
+        try:
+            bot.loop.create_task(track_progress_updater(control_message, voice_client, player))
+        except Exception:
+            # If scheduling fails, ignore silently
+            pass
 
     except Exception as e:
         await ctx.send(embed=disnake.Embed(color=0xff0000, title="오류", description=str(e)))
@@ -951,6 +1122,80 @@ async def play_next_song(ctx, channel_id, player=None):
 
     next_song = waiting_songs[channel_id].pop(0)
     await play_song(ctx, channel_id, next_song, ctx.author)
+
+
+async def track_progress_updater(message, voice_client, player):
+    """Update the embed in `message` every second showing elapsed/total playback time.
+    This updater increments elapsed time only while the voice_client is playing. It will stop
+    when the voice client is disconnected or when the source changes.
+    """
+    try:
+        duration = None
+        if hasattr(player, 'data'):
+            duration = player.data.get('duration')
+
+        elapsed = 0.0
+        prev_time = time.time()
+
+        # Fetch original embed to reuse
+        original_embed = message.embeds[0] if message.embeds else None
+
+        while voice_client and voice_client.is_connected() and (voice_client.is_playing() or voice_client.is_paused()):
+            now = time.time()
+            # only count elapsed when actually playing
+            if voice_client.is_playing():
+                elapsed += now - prev_time
+            prev_time = now
+
+            # format times
+            def fmt(sec):
+                try:
+                    sec = int(sec)
+                    m, s = divmod(sec, 60)
+                    return f"{m:02d}:{s:02d}"
+                except Exception:
+                    return "--:--"
+
+            elapsed_str = fmt(elapsed)
+            duration_str = fmt(duration) if duration else "--:--"
+
+            # build new embed based on the original
+            if original_embed:
+                new_embed = disnake.Embed.from_dict(original_embed.to_dict())
+            else:
+                new_embed = disnake.Embed(title="재생 중", color=0x00ff00)
+
+            # preserve title/description if present
+            if original_embed:
+                new_embed.title = original_embed.title
+                new_embed.description = original_embed.description
+                for f in original_embed.fields:
+                    new_embed.add_field(name=f.name, value=f.value, inline=f.inline)
+
+            new_embed.set_footer(text=f"재생시간: {elapsed_str} / {duration_str}")
+
+            try:
+                await message.edit(embed=new_embed)
+            except Exception:
+                pass
+
+            await asyncio.sleep(1)
+
+        # final update when playback stops
+        if original_embed:
+            final_embed = disnake.Embed.from_dict(original_embed.to_dict())
+        else:
+            final_embed = disnake.Embed(title="재생 종료", color=embedsuccess)
+
+        final_elapsed = fmt(elapsed)
+        final_duration = fmt(duration) if duration else "--:--"
+        final_embed.set_footer(text=f"재생시간: {final_elapsed} / {final_duration}")
+        try:
+            await message.edit(embed=final_embed)
+        except Exception:
+            pass
+    except Exception:
+        return
 
 @asynccontextmanager
 async def connect_db():
@@ -987,19 +1232,25 @@ async def send_control_buttons(ctx, embed):
         disnake.ui.Button(label="음량 변경", style=disnake.ButtonStyle.blurple, custom_id="volume_change"),
         disnake.ui.Button(label="노래 변경", style=disnake.ButtonStyle.grey, custom_id="change_song"),
         disnake.ui.Button(label="반복", style=disnake.ButtonStyle.green, custom_id="repeat"),
+        disnake.ui.Button(label="대기열", style=disnake.ButtonStyle.gray, custom_id="queue"),
     ]
 
     button_row = disnake.ui.View(timeout=None)
     for button in buttons:
         button_row.add_item(button)
 
-    await ctx.send(embed=embed, view=button_row)
+    # send and return the message so caller can update it (for playback time)
+    message = await ctx.send(embed=embed, view=button_row)
 
+    # assign callbacks
     button_row.children[0].callback = pause_callback
     button_row.children[1].callback = resume_callback
     button_row.children[2].callback = volume_change_callback
     button_row.children[3].callback = change_song_callback
     button_row.children[4].callback = repeat_callback
+    button_row.children[5].callback = queue_callback
+
+    return message
 
 async def pause_callback(interaction):
     interaction.guild.voice_client.pause()
@@ -1036,6 +1287,43 @@ async def repeat_callback(interaction):
         embed = disnake.Embed(color=0xff0000)
         embed.add_field(name="오류", value="현재 재생 중인 곡이 없습니다.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+async def queue_callback(interaction):
+    # Show the upcoming waiting songs for the current voice channel
+    vc = interaction.guild.voice_client
+    if not vc:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="오류", value="봇이 음성 채널에 연결되어 있지 않습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    channel_id = vc.channel.id
+    queue = waiting_songs.get(channel_id, [])
+    if not queue:
+        embed = disnake.Embed(color=0xffff00)
+        embed.add_field(name="대기열", value="현재 대기열에 곡이 없습니다.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Build a readable list (show up to 20 items)
+    display_list = []
+    for i, item in enumerate(queue[:20], start=1):
+        # item may be a search term or a url or a dict; try to prettify
+        if isinstance(item, str):
+            title = item
+        elif hasattr(item, 'title'):
+            title = getattr(item, 'title')
+        else:
+            title = str(item)
+        display_list.append(f"{i}. {title}")
+
+    embed = disnake.Embed(title="대기열 목록", description="\n".join(display_list), color=0x00ff00)
+    if len(queue) > 20:
+        embed.set_footer(text=f"총 {len(queue)}개의 곡이 대기 중입니다. (첫 20개만 표시)")
+    else:
+        embed.set_footer(text=f"총 {len(queue)}개의 곡이 대기 중입니다.")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class VolumeChangeModal(disnake.ui.Modal):
     def __init__(self):
@@ -1083,27 +1371,24 @@ class MusicChangeModal(Modal):
         super().__init__(title="음악 변경", components=components)
 
     async def callback(self, ctx: disnake.ModalInteraction):
+        await ctx.response.defer(ephemeral=True)
         try:
             new_url_or_name = ctx.text_values['new_music_input']
             # URL인지 확인하고, 그렇지 않으면 검색어로 처리
             if not new_url_or_name.startswith("http"):
                 new_url_or_name = f"ytsearch:{new_url_or_name}"
-            
             new_player = await YTDLSource.from_url(new_url_or_name, loop=asyncio.get_event_loop(), stream=True)
 
             if ctx.guild.voice_client.source:
                 ctx.guild.voice_client.stop()
                 ctx.guild.voice_client.play(new_player)
-
                 change_embed = disnake.Embed(color=0x00ff00, description=f"새로운 음악을 재생합니다: {new_url_or_name}")
-                await ctx.response.edit_message(embed=change_embed)
+                await ctx.edit_original_response(embed=change_embed)
             else:
-                await ctx.send("음성을 재생 중이지 않습니다.", ephemeral=True)
+                await ctx.edit_original_response(content="음성을 재생 중이지 않습니다.")
         except Exception as e:
-            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
-            logging.error("음악 변경 중 오류가 발생했습니다.", exc_info=True)  # 오류 로그를 기록하여 문제를 확인할 수 있도록 합니다.
-            await ctx.send("음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
-            print(e)  # 오류 로그를 출력하여 문제를 확인할 수 있도록 합니다.
+            logging.error("음악 변경 중 오류가 발생했습니다.", exc_info=True)
+            await ctx.edit_original_response(content="음악 변경 중 오류가 발생했습니다. 다시 시도해주세요.")
 
 @bot.slash_command(name='입장', description="음성 채널에 입장합니다.")
 async def join(ctx):
@@ -3475,7 +3760,7 @@ async def coin_list(ctx):
 
     embed = await view.create_embed()
     view.message = await ctx.send(embed=embed, view=view)
-    view_update2.start(view)  # 태스크 시작
+    # 이미 start는 위에서 처리되므로 중복 호출 금지
 
 @tasks.loop(seconds=60)
 async def view_update2(view: CoinView1):
@@ -3990,82 +4275,74 @@ async def bot_info(ctx):
         return
     await command_use_log(ctx, "정보", None)
 
-    # 응답 지연
     await ctx.response.defer()
 
-    # 핑 측정을 위한 웹소켓 연결 함수
-    def ping_websocket():
-        start_time = time.time()
-        ws = None  # ws 변수를 None으로 초기화
-        try:
-            ws = websocket.create_connection("wss://gateway.discord.gg/?v=9&encoding=json")  # Discord Gateway URL
-            ws.send('{"op": 1, "d": null}')  # Ping 요청
-            ws.recv()  # 응답 대기
-            end_time = time.time()
-            return (end_time - start_time) * 1000  # 밀리초로 변환
-        except Exception as e:
-            print(f"웹소켓 오류: {e}")
-            return None
-        finally:
-            if ws is not None:
-                ws.close()
+    # 기본 정보
+    total_members = sum(guild.member_count for guild in bot.guilds)
+    total_guilds = len(bot.guilds)
+    total_channels = len([ch for ch in bot.get_all_channels()])
+    uptime = get_uptime()
 
-    # ThreadPoolExecutor를 사용하여 웹소켓 핑 측정
-    with ThreadPoolExecutor() as executor:
-        ping_time = await bot.loop.run_in_executor(executor, ping_websocket)
-
-    if ping_time is None:
-        ping_time = float('inf')  # 핑 측정 실패 시 최대값으로 설정
-
-    # 응답 시간에 따라 임베드 색상 및 메시지 결정
-    if ping_time < 100:
-        embed_color = 0x00ff00  # 초록색 (좋음)
-        status = "응답 속도가 매우 좋습니다! 🚀"
-    elif ping_time < 300:
-        embed_color = 0xffff00  # 노란색 (보통)
-        status = "응답 속도가 좋습니다! 😊"
-    elif ping_time < 1000:
-        embed_color = 0xffa500  # 주황색 (나쁨)
-        status = "응답 속도가 느립니다. 😕"
-    else:
-        embed_color = 0xff0000  # 빨간색 (매우 나쁨)
-        status = "응답 속도가 매우 느립니다! ⚠️"
-
-    total_members = 0  # 총 유저 수 초기화
-
-    # 봇이 참여하고 있는 모든 서버를 반복
-    for guild in bot.guilds:
-        total_members += guild.member_count  # 각 서버의 멤버 수를 누적
-    
-    embed = disnake.Embed(title="봇 정보", color=embed_color)
-    embed.add_field(name="서버수", value=f"{len(bot.guilds)}", inline=True)
-    embed.add_field(name="유저수", value=f"{total_members:,}", inline=True)
-    embed.add_field(name="샤드수", value=f"{bot.shard_count}", inline=True)
-    embed.add_field(name="", value="", inline=False)
-    embed.add_field(name="업타임", value=f"{get_uptime()}", inline=True)
-    embed.add_field(name="개발자", value=f"{sec.developer_name}", inline=True)
-
-    # CPU 정보 불러오기
+    # 시스템 정보
     uname_info = platform.uname()
     memory_info = psutil.virtual_memory()
-
     total_memory = f"{memory_info.total / (1024 ** 3):.2f}"
     used_memory = f"{memory_info.used / (1024 ** 3):.2f}"
     percent_memory = memory_info.percent
 
-    # 서버 시간
+    # 핑 측정
+    latency = bot.latency * 1000  # ms
+
+    if latency < 100:
+        embed_color = 0x00ff00
+        status = "응답 속도가 매우 좋습니다! 🚀"
+    elif latency < 300:
+        embed_color = 0xffff00
+        status = "응답 속도가 좋습니다! 😊"
+    elif latency < 1000:
+        embed_color = 0xffa500
+        status = "응답 속도가 느립니다. 😕"
+    else:
+        embed_color = 0xff0000
+        status = "응답 속도가 매우 느립니다! ⚠️"
+
     server_date = datetime.now()
-    embed.add_field(name="시스템 정보", value=f"```python {platform.python_version()}\ndiscord.py {version('discord.py')}\ndisnake {version('disnake')}\nCPU : {cpu_info['brand_raw']}\nOS : {uname_info.system} {uname_info.release}\nMemory : {used_memory}GB / {total_memory}GB ({percent_memory}%)```\n응답속도 : {int(ping_time)}ms / {status}\n{server_date.strftime('%Y년 %m월 %d일 %p %I:%M').replace('AM', '오전').replace('PM', '오후')}", inline=False)
+    # Windows 일부 환경에서 strftime에 한글 포맷 문자열을 넣으면 UnicodeEncodeError가 발생할 수 있으므로 직접 구성
+    ampm = "오전" if server_date.hour < 12 else "오후"
+    hour12 = server_date.hour % 12 or 12
+    formatted_korean_datetime = f"{server_date.year}년 {server_date.month:02d}월 {server_date.day:02d}일 {ampm} {hour12:02d}:{server_date.minute:02d}"
+    embed = disnake.Embed(title="봇 정보", color=embed_color)
+    embed.add_field(name="서버 수", value=f"{total_guilds}", inline=True)
+    embed.add_field(name="유저 수", value=f"{total_members:,}", inline=True)
+    embed.add_field(name="채널 수", value=f"{total_channels}", inline=True)
+    embed.add_field(name="샤드 수", value=f"{bot.shard_count}", inline=True)
+    embed.add_field(name="업타임", value=uptime, inline=True)
+    embed.add_field(name="개발자", value=f"{sec.developer_name}", inline=True)
+    embed.add_field(
+        name="시스템 정보",
+        value=(
+            f"Python {platform.python_version()}\n"
+            f"disnake {version('disnake')}\n"
+            f"CPU : {cpu_info['brand_raw']}\n"
+            f"OS : {uname_info.system} {uname_info.release}\n"
+            f"Memory : {used_memory}GB / {total_memory}GB ({percent_memory}%)"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="응답속도",
+        value=f"{int(latency)}ms / {status}\n{formatted_korean_datetime}",
+        inline=False
+    )
 
     # 링크 버튼 추가
     support_button = Button(label="서포트 서버", url=sec.support_server_url, style=ButtonStyle.url)
-    docs_button = Button(label="하트 누르기", url=f"https://koreanbots.dev/bots/{bot.user.id}/vote", style=ButtonStyle.url)  # 여기에 원하는 URL을 넣으세요.
+    docs_button = Button(label="하트 누르기", url=f"https://koreanbots.dev/bots/{bot.user.id}/vote", style=ButtonStyle.url)
 
     view = disnake.ui.View()
     view.add_item(support_button)
     view.add_item(docs_button)
 
-    # 응답 전송
     await ctx.edit_original_response(embed=embed, view=view)
 
 @bot.slash_command(name="슬로우모드", description="채팅방에 슬로우모드를 적용합니다. [관리자전용]")
@@ -4102,38 +4379,38 @@ async def clear(ctx, num: int = commands.Param(name="개수")):
         return
 
     await command_use_log(ctx, "청소", f"{num}")
-    await ctx.response.defer()  # 응답 지연
+    await ctx.response.defer(ephemeral=True)  # 응답 지연
 
-    if ctx.author.guild_permissions.manage_messages:
-        try:
-            num = int(num)
-            if num <= 0 or num > 100:
-                embed = disnake.Embed(color=embederrorcolor)
-                embed.add_field(name="❌ 오류", value="삭제할 메시지 수는 1 이상 100 이하이어야 합니다.")
-                await ctx.send(embed=embed)
-            
-            deleted_messages = await ctx.channel.purge(limit=num)
-            await asyncio.sleep(3)
-            embed = disnake.Embed(color=embedsuccess)
-            await ctx.send(embed=embed)  # 응답 전송
-            return
-            await ctx.send(embed=embed)  # 응답 전송
-        except ValueError as ve:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value=str(ve))
-            await ctx.send(embed=embed)  # 응답 전송
-        except disnake.NotFound:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="삭제할 메시지를 찾을 수 없습니다.")
-            await ctx.send(embed=embed)  # 응답 전송
-        except Exception:
-            embed = disnake.Embed(color=embederrorcolor)
-            embed.add_field(name="❌ 오류", value="메시지 삭제에 실패했습니다.")
-            await ctx.send(embed=embed)  # 응답 전송
-    else:
+    if not ctx.author.guild_permissions.manage_messages:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="관리자만 실행가능한 명령어입니다.")
-        await ctx.send(embed=embed)  # 응답 전송
+        await ctx.edit_original_response(embed=embed)
+        return
+
+    try:
+        num = int(num)
+        if num <= 0 or num > 100:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 오류", value="삭제할 메시지 수는 1 이상 100 이하이어야 합니다.")
+            await ctx.edit_original_response(embed=embed)
+            return
+
+        deleted_messages = await ctx.channel.purge(limit=num)
+        embed = disnake.Embed(color=embedsuccess)
+        embed.add_field(name="✅ 삭제 완료", value=f"{len(deleted_messages)}개의 메시지를 삭제했습니다.")
+        await ctx.edit_original_response(embed=embed)
+    except ValueError as ve:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=str(ve))
+        await ctx.edit_original_response(embed=embed)
+    except disnake.NotFound:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="삭제할 메시지를 찾을 수 없습니다.")
+        await ctx.edit_original_response(embed=embed)
+    except Exception:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="메시지 삭제에 실패했습니다.")
+        await ctx.edit_original_response(embed=embed)
 
 @bot.slash_command(name="공지", description="서버에 공지를 전송합니다. [관리자전용]")
 async def notification(ctx, content: str = commands.Param(name="내용")):
@@ -5212,6 +5489,20 @@ async def log_price_history(asset_type, asset_name, price):
     db_path = os.path.join('system_database', 'log.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
+    # Ensure table exists (compatible schema)
+    await aiocursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_type TEXT,
+            asset_name TEXT,
+            price INTEGER,
+            date TEXT
+        )
+        """
+    )
+    await economy_aiodb.commit()
+
     await aiocursor.execute(
         "INSERT INTO price_history (asset_type, asset_name, price, date) VALUES (?, ?, ?, ?)",
         (asset_type, asset_name, price, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
@@ -5232,25 +5523,62 @@ async def update_coin_prices():
     for coin in coins:
         name, price = coin
         
-        # user_coin 테이블에서 buy_price와 현재 가격의 차이를 확인
-        await aiocursor.execute("SELECT buy_price FROM user_coin WHERE coin_name = ?", (name,))
-        user_coin_data = await aiocursor.fetchall()
-        
-        # 가격이 100% 이상 차이 나는 경우를 확인
-        significant_difference = any(abs(buy_price - price) / price >= 1 for (buy_price,) in user_coin_data)
-        
-        # 변동성 범위 설정 (가격 차이가 큰 경우 하락 확률을 높임)
-        if significant_difference:
-            volatility = random.uniform(0.10, 0.20)  # 하락 확률 증가
-        else:
-            volatility = random.uniform(0.20, 0.20)  # 기본 변동성
-        
-        # 새로운 가격 계산
-        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)
-        new_price = min(new_price, 300000000)  # 가상화폐 가격 상한가 : 3억원
-        new_price = max(new_price, 3000000)  # 가상화폐 가격 하한가 : 3백만원
+        # --- (1) 최근 10개 가격 이력 조회 (log.db의 price_history 사용) ---
+        log_db_path = os.path.join('system_database', 'log.db')
+        async with aiosqlite.connect(log_db_path) as log_db:
+            async with log_db.execute(
+                "SELECT price FROM price_history WHERE asset_type = ? AND asset_name = ? ORDER BY date DESC LIMIT 10",
+                ('coin', name)
+            ) as cur:
+                history_rows = await cur.fetchall()
+        history_prices = [p[0] for p in history_rows]
+
+        # 최근 변동률 계산
+        recent_volatility_factor = 1.0
+        if len(history_prices) >= 2:
+            diffs = []
+            for i in range(len(history_prices) - 1):
+                p1 = history_prices[i]
+                p2 = history_prices[i + 1]
+                diff_rate = abs(p1 - p2) / p2
+                diffs.append(diff_rate)
+
+            # 최근 변동률 평균
+            avg_diff = sum(diffs) / len(diffs)
+
+            # 변동률이 크면 변동성 축소
+            if avg_diff >= 0.20:
+                recent_volatility_factor = 0.4   # 코인 특성상 조금 더 강하게 조절
+            elif avg_diff >= 0.15:
+                recent_volatility_factor = 0.6
+            elif avg_diff >= 0.10:
+                recent_volatility_factor = 0.75
+            elif avg_diff >= 0.05:
+                recent_volatility_factor = 0.9
+
+    # --- (2) user_coin의 buy_price 관계 기반 변동성 계산 ---
+    await aiocursor.execute("SELECT buy_price FROM user_coin WHERE coin_name = ?", (name,))
+    user_coin_data = await aiocursor.fetchall()
+
+    significant_difference = any(
+        abs(buy_price - price) / price >= 1 for (buy_price,) in user_coin_data
+    )
+
+    if significant_difference:
+        base_volatility = random.uniform(0.10, 0.20)  # 하락 확률 증가
+    else:
+        base_volatility = random.uniform(0.05, 0.15)  # 기본 변동성 (코인은 주식보다 높음)
+
+        # --- (3) 최종 변동성 계산 (최근 변동률에 따라 조정) ---
+        final_volatility = base_volatility * recent_volatility_factor
+
+        # --- (4) 새로운 가격 계산 ---
+        new_price = round(price * random.uniform(1 - final_volatility, 1 + final_volatility), -1)
+
+        new_price = min(new_price, 300000000)  # 상한가 : 3억
+        new_price = max(new_price, 3000000)    # 하한가 : 300만
         new_price = int(new_price)
-        
+
         # 코인 가격 업데이트
         await aiocursor.execute("UPDATE coin SET price = ? WHERE coin_name = ?", (new_price, name))
         await log_price_history('coin', name, new_price)  # 가격 기록 추가
@@ -5263,34 +5591,70 @@ async def update_stock_prices():
     db_path = os.path.join('system_database', 'economy.db')
     economy_aiodb = await aiosqlite.connect(db_path)
     aiocursor = await economy_aiodb.cursor()
+
     await aiocursor.execute("SELECT stock_name, price FROM stock")
     stocks = await aiocursor.fetchall()
 
     for stock in stocks:
         name, price = stock
-        
-        # user_stock 테이블에서 buy_price와 현재 가격의 차이를 확인
+
+        # --- (1) 최근 10개 가격 이력 조회 (log.db의 price_history 사용) ---
+        log_db_path = os.path.join('system_database', 'log.db')
+        async with aiosqlite.connect(log_db_path) as log_db:
+            async with log_db.execute(
+                "SELECT price FROM price_history WHERE asset_type = ? AND asset_name = ? ORDER BY date DESC LIMIT 10",
+                ('stock', name)
+            ) as cur:
+                history_rows = await cur.fetchall()
+        history_prices = [p[0] for p in history_rows]
+
+        # 최근 변동률 계산
+        recent_volatility_factor = 1.0
+        if len(history_prices) >= 2:
+            diffs = []
+            for i in range(len(history_prices) - 1):
+                p1 = history_prices[i]
+                p2 = history_prices[i + 1]
+                diff_rate = abs(p1 - p2) / p2
+                diffs.append(diff_rate)
+
+            # 최근 변동률 평균
+            avg_diff = sum(diffs) / len(diffs)
+
+            # 변동률이 크면 변동성 축소
+            if avg_diff >= 0.15:
+                recent_volatility_factor = 0.5  # 변동성 50% 감소
+            elif avg_diff >= 0.10:
+                recent_volatility_factor = 0.7
+            elif avg_diff >= 0.05:
+                recent_volatility_factor = 0.85
+
+        # --- (2) user_stock의 buy_price 관계 기반 변동성 계산 ---
         await aiocursor.execute("SELECT buy_price FROM user_stock WHERE stock_name = ?", (name,))
         user_stock_data = await aiocursor.fetchall()
-        
-        # 가격이 100% 이상 차이 나는 경우를 확인
-        significant_difference = any(abs(buy_price - price) / price >= 1 for (buy_price,) in user_stock_data)
-        
-        # 변동성 범위 설정 (가격 차이가 큰 경우 하락 확률을 높임)
+
+        significant_difference = any(
+            abs(buy_price - price) / price >= 1 for (buy_price,) in user_stock_data
+        )
+
         if significant_difference:
-            volatility = random.uniform(0.10, 0.20)  # 하락 확률 증가
+            base_volatility = random.uniform(0.10, 0.20)
         else:
-            volatility = random.uniform(0.20, 0.20)  # 기본 변동성
-        
-        # 새로운 가격 계산
-        new_price = round(price * random.uniform(1 - volatility, 1 + volatility), -1)
-        new_price = min(new_price, 5000000)  # 주식 가격 상한가 : 5백만원
-        new_price = max(new_price, 50000)  # 주식 가격 하한가 : 5만원
+            base_volatility = random.uniform(0.05, 0.10)  # 기본 변동성 완화
+
+        # --- (3) 최종 변동성 계산 (최근 변동률에 따라 조정) ---
+        final_volatility = base_volatility * recent_volatility_factor
+
+        # --- (4) 새로운 가격 계산 ---
+        new_price = round(price * random.uniform(1 - final_volatility, 1 + final_volatility), -1)
+
+        new_price = min(new_price, 5000000)
+        new_price = max(new_price, 50000)
         new_price = int(new_price)
-        
-        # 주식 가격 업데이트
+
+        # 업데이트
         await aiocursor.execute("UPDATE stock SET price = ? WHERE stock_name = ?", (new_price, name))
-        await log_price_history('stock', name, new_price)  # 가격 기록 추가
+        await log_price_history('stock', name, new_price)
         await economy_aiodb.commit()
 
     await aiocursor.close()
@@ -5299,15 +5663,15 @@ async def update_stock_prices():
 @tasks.loop()
 async def periodic_price_update():
     while True:
-        await asyncio.sleep(60)
-        now = datetime.now(pytz.timezone('Asia/Seoul'))
-        if 6 <= now.hour < 22:
-            await update_stock_prices()
-            print("주가 변동")
-            await send_webhook_message("주가 변동")
-        await update_coin_prices()
-        print("코인 변동")
-        await send_webhook_message("코인 변동")
+        await asyncio.sleep(60)  # 60초 대기 — 다음 갱신 주기까지 일시정지
+        now = datetime.now(pytz.timezone('Asia/Seoul'))  # 현재 시간(KST) 가져오기
+        if 8 <= now.hour <= 20:  # 한국시간으로 08:00 ~ 20:00 사이인지 확인
+            await update_stock_prices()  # 주식 가격 갱신 호출
+            print("주가 변동")  # 콘솔에 로그 출력
+            #await send_webhook_message("주가 변동")  # 웹훅으로 변경 알림 전송
+        await update_coin_prices()  # 항상 암호화폐 가격 갱신 호출
+        print("코인 변동")  # 콘솔에 로그 출력
+        #await send_webhook_message("코인 변동")  # 웹훅으로 변경 알림 전송
 
 periodic_price_update.start()
 
@@ -5479,8 +5843,8 @@ async def check_experience():
     for user_id, adjusted_level in messages:
         try:
             user = await bot.fetch_user(user_id)
-            dm_setting = await dm_on_off(user)  # DM 설정을 가져옴
-            if dm_setting != 1:  # DM 수신이 비활성화된 경우 메시지를 보내지 않음
+            dm_setting = await dm_on_off(user)  # DM 설정을 가져옴 (1=수신, 0=차단)
+            if dm_setting == 1:  # 1일 때만 DM 발송
                 channel = await user.create_dm()
                 reward = adjusted_level * 10000
                 embed = disnake.Embed(
