@@ -25,7 +25,7 @@ conn.close()
 # 디스코드 봇 설정
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True
+intents.members = False
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 server_count = 0
