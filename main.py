@@ -1051,11 +1051,49 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
 
     # TTS 변환
     tts = gTTS(text=text, lang='ko')  # 한국어로 변환
-    with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
-        tts.save(f"{tmp_file.name}.mp3")  # 임시 파일로 저장
 
-        # 음성 파일 재생
-        voice_client.play(disnake.FFmpegPCMAudio(f"{tmp_file.name}.mp3", **ffmpeg_kwargs()))
+    # 이미 다른 오디오가 재생 중이면 재생 시도를 중단하고 안내
+    if voice_client.is_playing():
+        return await ctx.followup.send("현재 다른 오디오가 재생 중입니다. 잠시 후 다시 시도하세요.", ephemeral=True)
+
+    # 연결/권한 체크
+    if not voice_client or not voice_client.is_connected():
+        return await ctx.followup.send("음성 채널에 연결할 수 없습니다.", ephemeral=True)
+
+    perms = voice_channel.permissions_for(ctx.guild.me)
+    if not perms.connect or not perms.speak:
+        return await ctx.followup.send("봇에게 음성 채널 접속/말하기 권한이 없습니다.", ephemeral=True)
+
+    # 안전한 임시 파일 생성: Windows 잠금 문제 방지 (delete=False로 생성하고 명시적 삭제)
+    fd, path = tempfile.mkstemp(suffix=".mp3")
+    os.close(fd)
+    try:
+        tts.save(path)  # 임시 파일로 저장
+
+        # PCM 볼륨 래퍼를 사용하여 소리 크기 조절 가능 (기본 0.6)
+        source = disnake.PCMVolumeTransformer(disnake.FFmpegPCMAudio(path, **ffmpeg_kwargs()), volume=0.6)
+
+        try:
+            voice_client.play(source)
+        except Exception:
+            return await ctx.followup.send("오디오를 재생할 수 없습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
+
+        embed = disnake.Embed(
+            title="TTS 재생",
+            description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**",
+            color=0x00ff00,
+        )
+        await ctx.followup.send(embed=embed, ephemeral=True)
+
+        # 재생이 끝날 때까지 대기
+        while voice_client.is_playing():
+            await asyncio.sleep(1)
+    finally:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
 
         embed = disnake.Embed(
             title="TTS 재생",
@@ -2163,7 +2201,7 @@ async def email_verify(ctx, email: str):
     await ctx.response.send_modal(modal=verify_Modal_EMAIL())
 
 @bot.slash_command(name="지갑", description="자신이나 다른 유저의 지갑을 조회합니다.")
-async def wallet(ctx, member_id: str = None):
+async def wallet(ctx, member: disnake.Member = commands.Param(name="유저", default=None)):
     if not await check_permissions(ctx):  # 기능 토글 체크
         return
 
@@ -2172,26 +2210,35 @@ async def wallet(ctx, member_id: str = None):
 
     if not ctx.response.is_done():
         await ctx.response.defer(ephemeral=True)  # 지연 응답 확보 (중복 defer 방지)
-    await command_use_log(ctx, "지갑", f"{member_id}")  # 호출 로그
     
-    user = ctx.author if member_id is None else await bot.fetch_user(member_id)  # ID로 다른 유저 조회
+    user = ctx.author if member is None else member  # 맨션으로 다른 유저 조회
+    await command_use_log(ctx, "지갑", f"{user.id}")  # 호출 로그
+    
     if user is None:
-        await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value="유효하지 않은 유저입니다.")
+        await ctx.followup.send(embed=embed, ephemeral=True)
         return
 
     user_data = await fetch_user_data(user.id)  # 경제 DB 레코드 확인
     if user_data is None:
-        await ctx.followup.send(f"{user.mention}, 가입되지 않은 유저입니다.", ephemeral=True)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"{user.mention}은(는) 가입되지 않은 유저입니다.")
+        await ctx.followup.send(embed=embed, ephemeral=True)
         return
 
     tos_data = await fetch_tos_status(user.id)
     tos = tos_data[0] if tos_data else None
 
     if tos is None:
-        await ctx.followup.send(f"{user.mention}, TOS 정보가 없습니다.", ephemeral=True)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"{user.mention}의 TOS 정보가 없습니다.")
+        await ctx.followup.send(embed=embed, ephemeral=True)
         return
     elif tos == 1:
-        await ctx.followup.send(f"{user.mention}, 이용이 제한된 유저 입니다.", ephemeral=True)
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"{user.mention}은(는) 이용이 제한된 유저입니다.")
+        await ctx.followup.send(embed=embed, ephemeral=True)
         return
 
     money, level, exp, lose_money = user_data[1], user_data[3], user_data[4], user_data[5]
@@ -2229,10 +2276,23 @@ async def money_ranking(ctx):
         await ctx.send(embed=embed)
 
 class EarnButton(disnake.ui.Button):
-    def __init__(self):
+    def __init__(self, owner_id: int):
         super().__init__(label="돈 받기", style=ButtonStyle.primary)
+        self.owner_id = owner_id
 
     async def callback(self, interaction: disnake.MessageInteraction):
+        # 클릭자가 버튼 소유자(명령어 호출자)가 아니면 차단
+        try:
+            clicker_id = interaction.author.id
+        except Exception:
+            clicker_id = getattr(interaction, 'user', None).id if getattr(interaction, 'user', None) else None
+
+        if clicker_id != self.owner_id:
+            embed = disnake.Embed(color=embederrorcolor)
+            embed.add_field(name="❌ 권한 없음", value="이 버튼은 명령어를 실행한 사용자만 사용할 수 있습니다.")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
         random_add_money = random.randrange(30000, 100001)
         random_add_money = int(round(random_add_money, -3))
 
@@ -2277,7 +2337,7 @@ async def earn_money(ctx):
         save_cooldowns(cooldowns)
         
         # 버튼을 포함한 응답
-        button = EarnButton()
+        button = EarnButton(ctx.author.id)
         view = disnake.ui.View()
         view.add_item(button)
         embed = disnake.Embed(title="돈 받기!", description="아래 버튼을 눌러 돈을 받으세요.")
@@ -2415,6 +2475,15 @@ async def rock_paper_scissors_betting(ctx, user_choice: str = commands.Param(nam
         await ctx.send(embed=embed, ephemeral=True)
         return
 
+    # 예상 수수료(승리 시 보상 기준)를 포함한 금액이 있는지 확인
+    expected_win_amount = bet_amount * 2
+    expected_fee = round(expected_win_amount * 0.005)
+    if current_money < bet_amount + expected_fee:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({bet_amount:,}원)과 예상 수수료({expected_fee:,}원)을 합친 금액이 부족합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
     bot_choice = random.choice(["가위", "바위", "보"])
 
     # 결과 판단
@@ -2478,6 +2547,14 @@ async def betting(ctx, money: int = commands.Param(name="금액"), betting_metho
         await ctx.send(embed=embed, ephemeral=True)
         return
 
+    # 수수료(0.5%)를 포함한 금액이 있는지 확인
+    fee_check = round(money * 0.005)
+    if current_money < money + fee_check:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({money:,}원)과 수수료({fee_check:,}원)을 합친 금액이 부족합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
     if betting_method == "도박 (확률 30%, 2배, 실패시 -1배)":
         await handle_bet(ctx, user, money, success_rate=30, win_multiplier=2, lose_multiplier=1, lose_exp_divisor=1200)
     elif betting_method == "도박2 (확률 50%, 1.5배, 실패시 -0.75배)":
@@ -2486,6 +2563,13 @@ async def betting(ctx, money: int = commands.Param(name="금액"), betting_metho
 async def handle_bet(ctx, user, money, success_rate, win_multiplier, lose_multiplier, lose_exp_divisor):
     fee = round(money * 0.005)  # 0.5% 수수료
     net_bet = money - fee
+    # 방어적 검사: 호출 경로에 따라 중복 호출될 수 있으므로 여기서도 보유금 검사
+    current_money = await getmoney(user.id)
+    if current_money < money + fee:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({money:,}원)과 수수료({fee:,}원)을 합친 금액이 부족합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
     
     if random.randint(1, 100) <= success_rate:
         # 승리
@@ -2608,6 +2692,14 @@ async def betting_card(ctx, money: int = commands.Param(name="금액"), method: 
         await ctx.send(embed=embed, ephemeral=True)
         return
 
+    # 수수료(0.5%)를 포함한 금액이 있는지 확인
+    fee_check = round(money * 0.005)
+    if current_money < money + fee_check:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({money:,}원)과 수수료({fee_check:,}원)을 합친 금액이 부족합니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
     # 카드 랜덤 생성 함수
     def random_card():
         return random.choice(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'])
@@ -2711,15 +2803,24 @@ async def dragon_tiger(ctx, money: int = commands.Param(name="금액"), method: 
     if not await member_status(ctx):
         return
     user = ctx.author
+    current_money = await getmoney(user.id)
     if money <= 0:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="배팅 금액은 1원 이상이어야 합니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
 
-    if money > await getmoney(user.id):
+    if money > current_money:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="가지고 있는 돈보다 배팅 금액이 많습니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    # 수수료(0.5%)를 포함한 금액이 있는지 확인
+    fee_check = round(money * 0.005)
+    if current_money < money + fee_check:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({money:,}원)과 수수료({fee_check:,}원)을 합친 금액이 부족합니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
 
@@ -2790,15 +2891,24 @@ async def blackjack(ctx, money: int = commands.Param(name="금액")):
     if not await member_status(ctx):
         return
     user = ctx.author
+    current_money = await getmoney(user.id)
     if money <= 0:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="배팅 금액은 1원 이상이어야 합니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
 
-    if money > await getmoney(user.id):
+    if money > current_money:
         embed = disnake.Embed(color=embederrorcolor)
         embed.add_field(name="❌ 오류", value="가지고 있는 돈보다 배팅 금액이 많습니다.")
+        await ctx.send(embed=embed, ephemeral=True)
+        return
+
+    # 수수료(0.5%)를 포함한 금액이 있는지 확인
+    fee_check = round(money * 0.005)
+    if current_money < money + fee_check:
+        embed = disnake.Embed(color=embederrorcolor)
+        embed.add_field(name="❌ 오류", value=f"배팅 금액({money:,}원)과 수수료({fee_check:,}원)을 합친 금액이 부족합니다.")
         await ctx.send(embed=embed, ephemeral=True)
         return
 
