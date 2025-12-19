@@ -5,6 +5,8 @@ import bs4, re, pytz, math, time, os, coolsms_kakao
 import asyncio, disnake, aiosqlite, platform, tempfile, requests
 import random, string, datetime, psutil, aiohttp, cpuinfo
 from gtts import gTTS
+import tempfile
+import re
 from def_list import *
 import matplotlib.pyplot as plt
 from matplotlib import font_manager, rc
@@ -1048,63 +1050,39 @@ async def tts(ctx: disnake.CommandInteraction, text: str = commands.Param(name="
     else:
         # 이미 연결되어 있다면 기존 음성 클라이언트 사용
         await voice_client.move_to(voice_channel)
-
-    # TTS 변환
-    tts = gTTS(text=text, lang='ko')  # 한국어로 변환
-
-    # 이미 다른 오디오가 재생 중이면 재생 시도를 중단하고 안내
-    if voice_client.is_playing():
-        return await ctx.followup.send("현재 다른 오디오가 재생 중입니다. 잠시 후 다시 시도하세요.", ephemeral=True)
-
-    # 연결/권한 체크
-    if not voice_client or not voice_client.is_connected():
-        return await ctx.followup.send("음성 채널에 연결할 수 없습니다.", ephemeral=True)
-
-    perms = voice_channel.permissions_for(ctx.guild.me)
-    if not perms.connect or not perms.speak:
-        return await ctx.followup.send("봇에게 음성 채널 접속/말하기 권한이 없습니다.", ephemeral=True)
-
-    # 안전한 임시 파일 생성: Windows 잠금 문제 방지 (delete=False로 생성하고 명시적 삭제)
-    fd, path = tempfile.mkstemp(suffix=".mp3")
-    os.close(fd)
+    # TTS 생성 및 재생
     try:
-        tts.save(path)  # 임시 파일로 저장
+        # 기본 언어는 한국어로 설정 (필요시 확장 가능)
+        tts_obj = gTTS(text=text, lang='ko')
 
-        # PCM 볼륨 래퍼를 사용하여 소리 크기 조절 가능 (기본 0.6)
-        source = disnake.PCMVolumeTransformer(disnake.FFmpegPCMAudio(path, **ffmpeg_kwargs()), volume=0.6)
+        # 임시 파일에 저장
+        tmpf = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        tmp_path = tmpf.name
+        tmpf.close()
+        tts_obj.save(tmp_path)
 
-        try:
-            voice_client.play(source)
-        except Exception:
-            return await ctx.followup.send("오디오를 재생할 수 없습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
+        # FFmpeg로 재생
+        source = FFmpegPCMAudio(tmp_path, **ffmpeg_options)
 
-        embed = disnake.Embed(
-            title="TTS 재생",
-            description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**",
-            color=0x00ff00,
-        )
+        def _after_play(err):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            if err:
+                print(f"TTS playback error: {err}")
+
+        # 재생 시작
+        if voice_client.is_playing():
+            voice_client.stop()
+        voice_client.play(source, after=lambda e: bot.loop.call_soon_threadsafe(_after_play, e))
+
+        embed = disnake.Embed(title="TTS 재생", color=embedsuccess)
+        embed.add_field(name="내용", value=(text[:900] + '...') if len(text) > 900 else text, inline=False)
         await ctx.followup.send(embed=embed, ephemeral=True)
 
-        # 재생이 끝날 때까지 대기
-        while voice_client.is_playing():
-            await asyncio.sleep(1)
-    finally:
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
-
-        embed = disnake.Embed(
-            title="TTS 재생",
-            description=f"입력한 텍스트가 음성으로 변환되어 재생 중입니다:\n\n**{text}**",
-            color=0x00ff00,
-        )
-        await ctx.followup.send(embed=embed, ephemeral=True)
-
-        # 재생이 끝날 때까지 대기
-        while voice_client.is_playing():
-            await asyncio.sleep(1)  # asyncio.sleep 사용
+    except Exception as e:
+        await ctx.followup.send(f"TTS 오류가 발생했습니다: {e}", ephemeral=True)
 
 # 유튜브 다운로드 설정
 # yt_dlp가 bug_reports_message(before=...) 형태로 호출하므로 가변 인자를 받아 에러를 방지
@@ -1338,8 +1316,10 @@ async def play_next_song(ctx, channel_id, player=None):
         if channel:
             if player:
                 await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.")
+                print(f'{ctx.author.id}님이 {ctx.guild.id}에서 재생한 {player.title} 음악이 끝났습니다.')
             else:
                 await send_webhook_message(f"{ctx.author.id}님이 {ctx.guild.id}에서 재생한 음악이 끝났습니다.")
+                print(f'{ctx.author.id}님이 {ctx.guild.id}에서 재생한 음악이 끝났습니다.')
             embed = disnake.Embed(color=embedsuccess)
             embed.add_field(name="음악 종료", value="다음 재생할 음악이 없어 음악이 종료되었습니다.")
             return await channel.send(embed=embed)
@@ -5211,11 +5191,47 @@ async def money_edit(ctx, member_id: str = commands.Param(name="유저"), choice
     await command_use_log(ctx, "돈관리", f"{member_id}, {choice}, {money}")
     
     if ctx.author.id in developer:
-        # 멘션 또는 ID에서 사용자 ID 추출
-        user = ctx.author if member_id is None else await bot.fetch_user(member_id)
-        if user is None:
-            await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
-            return
+        # 멘션 또는 ID에서 사용자 ID 추출 (멘션 형식 <@123...>, <@!123...> 또는 숫자 ID 허용)
+        if member_id is None:
+            user = ctx.author
+        else:
+            user = None
+            # 멘션 형식 추출
+            m = re.match(r'^<@!?(\d+)>$', member_id)
+            target_id = None
+            if m:
+                target_id = int(m.group(1))
+            else:
+                # 숫자 문자열이면 그대로 ID로 사용
+                if member_id.isdigit():
+                    target_id = int(member_id)
+
+            if target_id is not None:
+                try:
+                    # 우선 서버 멤버로 찾기 (가능하면 멤버 정보를 얻음)
+                    if ctx.guild:
+                        member_obj = ctx.guild.get_member(target_id)
+                        if member_obj:
+                            user = member_obj
+                        else:
+                            user = await bot.fetch_user(target_id)
+                    else:
+                        user = await bot.fetch_user(target_id)
+                except Exception:
+                    user = None
+            else:
+                # 이름으로 시도 (서버 컨텍스트가 있을 때만)
+                if ctx.guild:
+                    user = ctx.guild.get_member_named(member_id)
+                if user is None:
+                    try:
+                        user = await bot.fetch_user(member_id)
+                    except Exception:
+                        user = None
+
+            if user is None:
+                await ctx.followup.send("유효하지 않은 유저 ID입니다.", ephemeral=True)
+                return
 
         user_data = await fetch_user_data(user.id)
         if user_data is None:
